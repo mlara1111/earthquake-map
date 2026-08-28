@@ -1,19 +1,37 @@
 services:
-  postgres:
-    image: postgis/postgis:18-3.6
-    container_name: earthquake-postgres
-    restart: unless-stopped
 
+  postgres:
+    container_name: earthquake-postgres
+    image: postgis/postgis:18-3.6
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
     ports:
       - "5432:5432"
-
     volumes:
       - earthquake-db-data:/var/lib/postgresql
+
+  web:
+    container_name: earthquake-web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    depends_on:
+      - postgres
+
 
 volumes:
   earthquake-db-data:

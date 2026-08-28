@@ -28,5 +28,11 @@ env/
 Thumbs.db
 
 # Local data
-data/raw/
-data/processed/
+data/
+doc/
+
+# Python build artifacts
+*.egg-info/
+
+# Temporary development archives
+*.zip
