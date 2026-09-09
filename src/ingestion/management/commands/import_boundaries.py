@@ -7,6 +7,8 @@ from django.core.management.base import BaseCommand
 from django.db import connection
 
 from ingestion.geoboundaries_downloader import GeoBoundariesDownloader
+from ingestion.text_normalizer import repair_mojibake
+
 
 class Command(BaseCommand):
     help = "Import administrative boundaries from geoBoundaries."
@@ -16,146 +18,148 @@ class Command(BaseCommand):
             "--level",
             choices=["ADM0", "ADM1"],
             default="ADM0",
+            help="Administrative boundary level to import.",
         )
 
         parser.add_argument(
-            "--iso",
-            help="ISO 3166-1 alpha-3 country code.",
-        )
-
-        parser.add_argument(
-            "--skip-existing",
-            action="store_true",
-            help="Skip boundaries already imported.",
+            "--country",
+            help="ISO 3166-1 alpha-3 country code to import.",
         )
 
     def handle(self, *args, **options):
         level = options["level"]
-        iso_filter = options["iso"]
-        skip_existing = options["skip_existing"]
+        country = options["country"]
 
-        downloader = GeoBoundariesDownloader(
-            "/app/data/boundaries"
-        )
+        downloader = GeoBoundariesDownloader()
 
-        boundaries = downloader.get_metadata(level)
+        ### Download and store the metadata required to identify the
+        ### boundary datasets available for the requested administrative level.
+        metadata = downloader.get_metadata(level)
+        downloader.save_metadata(level, metadata)
 
-        ### Filter boundaries by ISO country code when requested.
-        if iso_filter:
+        ### Import either the requested country or all available countries.
+        boundaries = metadata
+
+        if country:
             boundaries = [
                 boundary
-                for boundary in boundaries
-                if boundary["boundaryISO"] == iso_filter
+                for boundary in metadata
+                if boundary["boundaryISO"] == country
             ]
 
-            ### No boundary was found for the requested country.
             if not boundaries:
                 raise ValueError(
-                    f"Boundary not found: {level}/{iso_filter}"
+                    f"Boundary not found: {level}/{country}"
                 )
 
-            ### geoBoundaries may contain multiple ADM1 datasets for the same ISO.
-            ### Select the dataset with the highest number of administrative units.
-            if level == "ADM1" and len(boundaries) > 1:
-                boundaries.sort(
-                    key=lambda boundary: int(
-                        boundary.get("admUnitCount", 0)
-                    ),
-                    reverse=True,
-                )
+        successful_boundaries = []
+        failed_boundaries = []
 
-                boundaries = boundaries[:1]
-
-        self.stdout.write(
-            f"Found {len(boundaries)} {level} boundaries."
-        )
-
-        for number, boundary in enumerate(boundaries, start=1):
+        for boundary in boundaries:
             iso = boundary["boundaryISO"]
 
             self.stdout.write(
-                f"[{number}/{len(boundaries)}] Processing {iso}..."
+                f"Importing {level} boundary: {iso}"
             )
 
-            if skip_existing and self.boundary_exists(level, iso):
-                self.stdout.write(
-                    f"  Skipping {iso}: already imported."
-                )
-                continue
+            try:
+                directory = downloader.download_boundary(boundary)
 
-            directory = downloader.download_boundary(boundary)
-
-            shp_files = list(directory.glob("*.shp"))
-
-            if not shp_files:
-                raise RuntimeError(
-                    f"No Shapefile found for {level}/{iso}"
+                shp_file = (
+                    directory
+                    / f"geoBoundaries-{iso}-{level}.shp"
                 )
 
-            shp_file = self.select_main_shapefile(
-                shp_files,
-                iso,
-                level,
-            )
+                if not shp_file.exists():
+                    raise FileNotFoundError(
+                        f"Shapefile not found: {shp_file}"
+                    )
 
-            self.import_shapefile(
-                shp_file,
-                boundary,
-                level,
-            )
+                self.import_shapefile(
+                    shp_file=shp_file,
+                    boundary=boundary,
+                    level=level,
+                )
 
+                successful_boundaries.append(iso)
+
+            except Exception as exc:
+                ### Keep processing the remaining boundaries when one dataset fails.
+                ### The failure is recorded so the command can report an incomplete
+                ### import and return a non-zero exit status at the end.
+                failed_boundaries.append(
+                    {
+                        "iso": iso,
+                        "error": str(exc),
+                    }
+                )
+
+                self.stderr.write(
+                    self.style.ERROR(
+                        f"Failed to import {level} boundary {iso}: {exc}"
+                    )
+                )
+
+        ### Report the final import status after all requested boundaries were processed.
+        self.stdout.write("")
         self.stdout.write(
-            self.style.SUCCESS(
-                f"{level} import completed."
+            f"Successfully imported: {len(successful_boundaries)}"
+        )
+        self.stdout.write(
+            f"Failed: {len(failed_boundaries)}"
+        )
+
+        if failed_boundaries:
+            self.stdout.write("")
+            self.stdout.write("Failed boundaries:")
+
+            for failure in failed_boundaries:
+                self.stdout.write(
+                    f"- {failure['iso']}: {failure['error']}"
+                )
+
+            ### Signal an incomplete import to the operating system and CI/CD.
+            raise RuntimeError(
+                f"{len(failed_boundaries)} boundary import(s) failed."
             )
-        )
-
-    def boundary_exists(self, level, iso):
-        with connection.cursor() as cursor:
-            if level == "ADM0":
-                cursor.execute(
-                    """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM tbl_boundary_country
-                        WHERE country_code = %s
-                    );
-                    """,
-                    [iso],
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM tbl_boundary_region
-                        WHERE country_code = %s
-                    );
-                    """,
-                    [iso],
-                )
-
-            return cursor.fetchone()[0]
-
-    @staticmethod
-    def select_main_shapefile(shp_files, iso, level):
-        expected_name = (
-            f"geoBoundaries-{iso}-{level}.shp"
-        )
-
-        for shp_file in shp_files:
-            if shp_file.name == expected_name:
-                return shp_file
-
-        return shp_files[0]
 
     def get_postgres_connection_string(self):
+        ### Build the PostgreSQL connection string used by ogr2ogr.
+        ### PostgreSQL connection parameters are provided through environment variables
+        ### so the ingestion process uses the same configuration as the Django service.
         return (
-            f"PG:host={os.getenv('POSTGRES_HOST', 'postgres')} "
-            f"port={os.getenv('POSTGRES_PORT', '5432')} "
-            f"dbname={os.getenv('POSTGRES_DB')} "
-            f"user={os.getenv('POSTGRES_USER')}"
+            f"PG:host={os.environ['POSTGRES_HOST']} "
+            f"port={os.environ['POSTGRES_PORT']} "
+            f"dbname={os.environ['POSTGRES_DB']} "
+            f"user={os.environ['POSTGRES_USER']}"
         )
+
+    def normalize_staging_shapename(self, staging_table):
+        ### Repair UTF-8 mojibake in human-readable boundary names before
+        ### copying them from the staging table into the final tables.
+        ### Boundary identifiers such as shapeISO and shapeID are not modified.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT ogc_fid, shapename
+                FROM {staging_table};
+                """
+            )
+
+            rows = cursor.fetchall()
+
+            for ogc_fid, shapename in rows:
+                normalized = repair_mojibake(shapename)
+
+                if normalized != shapename:
+                    cursor.execute(
+                        f"""
+                        UPDATE {staging_table}
+                        SET shapename = %s
+                        WHERE ogc_fid = %s;
+                        """,
+                        [normalized, ogc_fid],
+                    )
 
     def import_shapefile(self, shp_file, boundary, level):
         if level == "ADM0":
@@ -165,10 +169,10 @@ class Command(BaseCommand):
             staging_table = "staging_boundary_region"
             target_table = "tbl_boundary_region"
 
+        ### Remove the previous staging table before importing the new
+        ### shapefile. The staging table is temporary and recreated by ogr2ogr.
         with connection.cursor() as cursor:
-            cursor.execute(
-                f"DROP TABLE IF EXISTS {staging_table};"
-            )
+            cursor.execute(f"DROP TABLE IF EXISTS {staging_table};")
 
         connection.close()
 
@@ -194,13 +198,24 @@ class Command(BaseCommand):
             },
         )
 
+        ### Normalize human-readable names immediately after ogr2ogr imports
+        ### the source data. This fixes source-level mojibake before any
+        ### earthquake records receive country or region names.
+        self.normalize_staging_shapename(staging_table)
+
         if level == "ADM0":
             self.import_adm0(boundary, staging_table)
         else:
             self.import_adm1(boundary, staging_table)
 
     def import_adm0(self, boundary, staging_table):
-        iso = boundary["boundaryISO"]
+        ### Insert the normalized country boundary into the definitive table.
+        ### The country ISO code is taken from geoBoundaries metadata because
+        ### it is the authoritative identifier for the imported country.
+        boundary_year = self.extract_boundary_year(boundary)
+        boundary_source = "geoBoundaries"
+        boundary_license = boundary.get("licenseDetail")
+        boundary_build_date = boundary.get("buildDate")
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -233,66 +248,40 @@ class Command(BaseCommand):
                     boundary_year = EXCLUDED.boundary_year,
                     boundary_source = EXCLUDED.boundary_source,
                     boundary_license = EXCLUDED.boundary_license,
-                    boundary_build_date = EXCLUDED.boundary_build_date,
-                    updated_date = CURRENT_TIMESTAMP;
+                    boundary_build_date = EXCLUDED.boundary_build_date;
                 """,
                 [
-                    iso,
-                    self.parse_year(
-                        boundary["boundaryYearRepresented"]
-                    ),
-                    boundary["boundarySource"],
-                    boundary["boundaryLicense"],
-                    self.parse_build_date(
-                        boundary["buildDate"]
-                    ),
+                    boundary["boundaryISO"],
+                    boundary_year,
+                    boundary_source,
+                    boundary_license,
+                    boundary_build_date,
                 ],
             )
 
-            cursor.execute(
-                """
-                UPDATE tbl_boundary_country
-                SET geometry_simplified =
-                    ST_SimplifyPreserveTopology(
-                        geometry,
-                        0.01
-                    )
-                WHERE country_code = %s;
-                """,
-                [iso],
-            )
-
     def import_adm1(self, boundary, staging_table):
-        iso = boundary["boundaryISO"]
-
-        directory = (
-            Path("/app/data/boundaries")
-            / "ADM1"
-            / iso
-        )
-
-        simplified_file = (
-            directory
-            / f"geoBoundaries-{iso}-ADM1_simplified.geojson"
-        )
-
-        if not simplified_file.exists():
-            raise RuntimeError(
-                f"Simplified GeoJSON not found: {simplified_file}"
-            )
-
-        simplified_staging_table = (
-            "staging_boundary_region_simplified"
-        )
-
-        # ---------------------------------------------------------
-        # Import simplified geometry into a separate staging table
-        # ---------------------------------------------------------
+        ### Import the simplified geometry used for spatial operations and
+        ### preserve the original geometry as the detailed boundary geometry.
+        simplified_table = "staging_boundary_region_simplified"
 
         with connection.cursor() as cursor:
             cursor.execute(
-                f"DROP TABLE IF EXISTS "
-                f"{simplified_staging_table};"
+                f"DROP TABLE IF EXISTS {simplified_table};"
+            )
+
+        simplified_file = (
+            Path("data/boundaries")
+            / "ADM1"
+            / boundary["boundaryISO"]
+            / (
+                f"geoBoundaries-{boundary['boundaryISO']}"
+                "-ADM1_simplified.geojson"
+            )
+        )
+
+        if not simplified_file.exists():
+            raise FileNotFoundError(
+                f"Simplified boundary file not found: {simplified_file}"
             )
 
         connection.close()
@@ -305,7 +294,7 @@ class Command(BaseCommand):
                 self.get_postgres_connection_string(),
                 str(simplified_file),
                 "-nln",
-                simplified_staging_table,
+                simplified_table,
                 "-overwrite",
                 "-nlt",
                 "PROMOTE_TO_MULTI",
@@ -316,19 +305,34 @@ class Command(BaseCommand):
             env={
                 **os.environ,
                 "PGPASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
-            }
+            },
         )
 
-        # ---------------------------------------------------------
-        # Insert original + official simplified geometry
-        #
-        # Both geoBoundaries files preserve feature order.
-        # We therefore associate the geometries using ROW_NUMBER().
-        # ---------------------------------------------------------
+        boundary_year = self.extract_boundary_year(boundary)
+        boundary_source = "geoBoundaries"
+        boundary_license = boundary.get("licenseDetail")
+        boundary_build_date = boundary.get("buildDate")
 
         with connection.cursor() as cursor:
+            ### The simplified and original datasets contain the same feature
+            ### order. ROW_NUMBER provides a deterministic positional join.
             cursor.execute(
                 f"""
+                WITH original AS (
+                    SELECT
+                        shapeid,
+                        shapename,
+                        shapeiso,
+                        wkb_geometry,
+                        ROW_NUMBER() OVER (ORDER BY ogc_fid) AS row_number
+                    FROM {staging_table}
+                ),
+                simplified AS (
+                    SELECT
+                        wkb_geometry,
+                        ROW_NUMBER() OVER (ORDER BY ogc_fid) AS row_number
+                    FROM {simplified_table}
+                )
                 INSERT INTO tbl_boundary_region (
                     source_boundary_id,
                     country_code,
@@ -352,78 +356,44 @@ class Command(BaseCommand):
                     %s,
                     %s,
                     %s
-                FROM (
-                    SELECT
-                        *,
-                        ROW_NUMBER() OVER (
-                            ORDER BY ogc_fid
-                        ) AS row_num
-                    FROM {staging_table}
-                ) original
-                JOIN (
-                    SELECT
-                        *,
-                        ROW_NUMBER() OVER (
-                            ORDER BY ogc_fid
-                        ) AS row_num
-                    FROM {simplified_staging_table}
-                ) simplified
-                    ON original.row_num = simplified.row_num
+                FROM original
+                JOIN simplified
+                    ON original.row_number = simplified.row_number
                 ON CONFLICT (source_boundary_id)
                 DO UPDATE SET
-                    country_code =
-                        EXCLUDED.country_code,
-                    region =
-                        EXCLUDED.region,
-                    region_code =
-                        EXCLUDED.region_code,
-                    geometry =
-                        EXCLUDED.geometry,
-                    geometry_simplified =
-                        EXCLUDED.geometry_simplified,
-                    boundary_year =
-                        EXCLUDED.boundary_year,
-                    boundary_source =
-                        EXCLUDED.boundary_source,
-                    boundary_license =
-                        EXCLUDED.boundary_license,
-                    boundary_build_date =
-                        EXCLUDED.boundary_build_date,
-                    updated_date =
-                        CURRENT_TIMESTAMP;
+                    country_code = EXCLUDED.country_code,
+                    region = EXCLUDED.region,
+                    region_code = EXCLUDED.region_code,
+                    geometry = EXCLUDED.geometry,
+                    geometry_simplified = EXCLUDED.geometry_simplified,
+                    boundary_year = EXCLUDED.boundary_year,
+                    boundary_source = EXCLUDED.boundary_source,
+                    boundary_license = EXCLUDED.boundary_license,
+                    boundary_build_date = EXCLUDED.boundary_build_date;
                 """,
                 [
-                    iso,
-                    self.parse_year(
-                        boundary["boundaryYearRepresented"]
-                    ),
-                    boundary["boundarySource"],
-                    boundary["boundaryLicense"],
-                    self.parse_build_date(
-                        boundary["buildDate"]
-                    ),
+                    boundary["boundaryISO"],
+                    boundary_year,
+                    boundary_source,
+                    boundary_license,
+                    boundary_build_date,
                 ],
             )
 
-            # -----------------------------------------------------
-            # Cleanup simplified staging table
-            # -----------------------------------------------------
-
+            ### The simplified staging table is no longer needed after import.
             cursor.execute(
-                f"DROP TABLE IF EXISTS "
-                f"{simplified_staging_table};"
+                f"DROP TABLE IF EXISTS {simplified_table};"
             )
 
-    @staticmethod
-    def parse_year(value):
-        try:
-            return int(value)
-        except (TypeError, ValueError):
+    def extract_boundary_year(self, boundary):
+        ### Extract the numeric boundary year from geoBoundaries metadata.
+        ### Return None when the metadata does not provide a usable year.
+        boundary_year = boundary.get("boundaryYear")
+
+        if not boundary_year:
             return None
 
-    @staticmethod
-    def parse_build_date(value):
-        return datetime.strptime(
-            value,
-            "%b %d, %Y",
-        ).date()
+        try:
+            return int(boundary_year)
+        except (TypeError, ValueError):
+            return None

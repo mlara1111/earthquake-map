@@ -1,0 +1,144 @@
+/*
+    Main map container.
+
+    Leaflet requires an explicit height because the map fills
+    the dimensions of this container.
+*/
+#map {
+    height: 100vh;
+    width: 100%;
+}
+
+/*
+    Remove the default browser margin so the map occupies
+    the complete viewport.
+*/
+body {
+    margin: 0;
+}
+
+/*
+    Keep the earthquake count visible while the map is being used.
+*/
+#earthquake-count {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+
+/*
+    Style the magnitude legend as a compact Leaflet control.
+
+    The legend represents magnitude using color intensity only.
+*/
+.magnitude-legend {
+    width: 220px;
+    padding: 10px 12px;
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+/*
+    Keep the legend title visually distinct from the color scale.
+*/
+.magnitude-legend-title {
+    margin-bottom: 7px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+/*
+    Display the magnitude color scale as a continuous visual
+    progression from light orange to dark orange.
+*/
+.magnitude-legend-gradient {
+    width: 100%;
+    height: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+    box-sizing: border-box;
+    background: linear-gradient(
+        to right,
+        #ffd9a8 0%,
+        #ffc27a 12.5%,
+        #ffad4f 25%,
+        #ff9826 37.5%,
+        #ff850f 50%,
+        #f47700 62.5%,
+        #df6500 75%,
+        #c45100 87.5%,
+        #a63f00 100%
+    );
+}
+
+/*
+    Arrange the magnitude labels below the color scale.
+*/
+.magnitude-legend-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+}
+
+/*
+    Define the visual representation of an individual earthquake.
+
+    The marker keeps its magnitude-dependent fill color while using
+    a darker outline to improve contrast against detailed map backgrounds.
+    The subtle dark halo provides an additional separation from the map.
+*/
+.earthquake-marker {
+    box-sizing: border-box;
+    border-style: solid;
+    border-radius: 50%;
+    border-color: rgba(0, 0, 0, 0.55);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.20);
+    transition:
+        border-color 100ms ease,
+        border-width 100ms ease,
+        background-color 100ms ease,
+        box-shadow 100ms ease;
+}
+
+/*
+    Define the visual representation of a cluster.
+
+    Cluster colors and dimensions are supplied dynamically by JavaScript
+    according to the strongest earthquake contained in the cluster.
+*/
+.earthquake-cluster {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-style: solid;
+    border-radius: 50%;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    line-height: 1;
+    text-align: center;
+    transition:
+        border-color 100ms ease,
+        border-width 100ms ease,
+        background-color 100ms ease;
+}
+
+/*
+    Make the cluster count readable even when the cluster represents
+    a relatively small magnitude.
+*/
+.earthquake-cluster-count {
+    pointer-events: none;
+    user-select: none;
+}

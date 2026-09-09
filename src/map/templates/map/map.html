@@ -1,0 +1,88 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Earthquake Map</title>
+
+    <!--
+        Use the project favicon served through Django's static-file system.
+    -->
+    <link
+        rel="icon"
+        type="image/svg+xml"
+        href="{% static 'map/favicon.svg' %}"
+    >
+
+    <!--
+        Leaflet provides the interactive map component used by the MVP.
+    -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin=""
+    >
+
+    <!--
+        Leaflet.markercluster provides zoom-dependent marker clustering.
+
+        The default cluster appearance is not loaded because the MVP
+        uses a custom cluster icon based on earthquake magnitude.
+    -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    >
+
+    <!--
+        Project-specific map styling.
+    -->
+    <link
+        rel="stylesheet"
+        href="{% static 'map/css/map.css' %}"
+    >
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <div id="earthquake-count">
+        Loading earthquakes...
+    </div>
+
+    <!--
+        Leaflet provides the JavaScript API used by the map application.
+    -->
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""
+    ></script>
+
+    <!--
+        Leaflet.markercluster extends Leaflet with clustering support.
+    -->
+    <script
+        src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+    ></script>
+
+    <!--
+        Earthquake visual configuration must be loaded before map.js.
+    -->
+    <script
+        src="{% static 'map/js/earthquake-style.js' %}"
+    ></script>
+
+    <!--
+        Main map application logic.
+    -->
+    <script
+        src="{% static 'map/js/map.js' %}"
+    ></script>
+</body>
+</html>
