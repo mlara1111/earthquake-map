@@ -1,72 +1,594 @@
 /*
-    Main map container.
+    Main application layout.
 
-    Leaflet requires an explicit height because the map fills
-    the dimensions of this container.
+    The map occupies the complete browser viewport.
+    The earthquake panel is positioned above the map.
 */
-#map {
-    height: 100vh;
-    width: 100%;
-}
 
-/*
-    Remove the default browser margin so the map occupies
-    the complete viewport.
-*/
+html,
 body {
+    width: 100%;
+    height: 100%;
+
     margin: 0;
+
+    overflow: hidden;
+
+    font-family: Arial, sans-serif;
 }
 
+#earthquake-app {
+    position: relative;
+
+    width: 100%;
+    height: 100%;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+
 /*
-    Keep the earthquake count visible while the map is being used.
+    Left earthquake panel.
+
+    The agreed MVP maximum width is 300px.
+
+    The panel occupies the left side of the viewport, while the
+    map controls are positioned on the map immediately to its right.
 */
-#earthquake-count {
+
+#earthquake-panel {
     position: absolute;
-    top: 10px;
-    right: 10px;
+
+    top: 8px;
+    left: 8px;
+    bottom: 8px;
+
+    width: 300px;
+    max-width: calc(100vw - 16px);
+
     z-index: 1000;
-    padding: 8px 12px;
-    background: white;
+
+    display: flex;
+    flex-direction: column;
+
+    background: rgba(255, 255, 255, 0.96);
+
+    border-radius: 6px;
+
+    box-shadow:
+        0 1px 8px rgba(0, 0, 0, 0.25);
+
+    overflow: hidden;
+}
+
+
+/*
+    Panel header.
+*/
+
+.earthquake-panel-header {
+    flex: 0 0 auto;
+
+    padding: 14px 14px 12px;
+
+    background: rgba(255, 255, 255, 0.98);
+}
+
+.earthquake-panel-header h1 {
+    margin: 0 0 7px;
+
+    font-size: 21px;
+    line-height: 1.15;
+
+    font-weight: 700;
+}
+
+.earthquake-panel-header p {
+    margin: 0 0 14px;
+
+    color: #555;
+
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.earthquake-panel-header label {
+    display: block;
+
+    margin-bottom: 4px;
+
+    font-size: 14px;
+
+    font-weight: 700;
+}
+
+#earthquake-sort {
+    width: 100%;
+    height: 36px;
+
+    padding: 0 10px;
+
+    border: 1px solid #bbb;
+
     border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
-    font-family: Arial, sans-serif;
+
+    background: #fff;
+
+    font-size: 15px;
+}
+
+
+/*
+    Scrollable earthquake list.
+*/
+
+#earthquake-list {
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    border-top: 1px solid #ddd;
+}
+
+
+/*
+    Individual earthquake row.
+
+    Three columns:
+
+    1. Magnitude
+    2. Date/time and place
+    3. Depth
+*/
+
+.earthquake-list-item {
+    display: grid;
+
+    grid-template-columns:
+        48px
+        minmax(0, 1fr)
+        66px;
+
+    column-gap: 8px;
+
+    min-height: 72px;
+
+    padding: 9px 10px;
+
+    box-sizing: border-box;
+
+    border-bottom: 1px solid #e2e2e2;
+
+    background: #fff;
+
+    cursor: pointer;
+
+    transition:
+        background-color 0.12s ease,
+        box-shadow 0.12s ease;
+}
+
+.earthquake-list-item:hover {
+    background: #f5f5f5;
+}
+
+.earthquake-list-item.selected {
+    background: #fff3df;
+
+    box-shadow:
+        inset 4px 0 0 #ff850f;
+}
+
+
+/*
+    Magnitude column.
+*/
+
+.earthquake-list-magnitude {
+    align-self: start;
+
+    padding-top: 1px;
+
+    font-size: 20px;
+    line-height: 1;
+
+    font-weight: 700;
+}
+
+
+/*
+    Date/time and location column.
+*/
+
+.earthquake-list-main {
+    min-width: 0;
+}
+
+.earthquake-list-date {
+    margin-bottom: 5px;
+
+    font-size: 12px;
+    line-height: 1.1;
+
+    color: #555;
+
+    white-space: nowrap;
+}
+
+.earthquake-list-place {
+    overflow: hidden;
+
+    font-size: 14px;
+    line-height: 1.25;
+
+    color: #222;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+}
+
+
+/*
+    Depth column.
+*/
+
+.earthquake-list-depth {
+    align-self: start;
+
+    padding-top: 2px;
+
+    text-align: right;
+
+    font-size: 12px;
+    line-height: 1.2;
+
+    color: #555;
+
+    white-space: nowrap;
+}
+
+
+/*
+    Loading and error messages.
+*/
+
+.earthquake-list-status {
+    padding: 20px 14px;
+
+    color: #555;
+
     font-size: 14px;
 }
 
-/*
-    Style the magnitude legend as a compact Leaflet control.
 
-    The legend represents magnitude using color intensity only.
+/*
+    Top-right viewport earthquake counter.
 */
+
+#earthquake-count {
+    position: absolute;
+
+    top: 10px;
+    right: 10px;
+
+    z-index: 1200;
+
+    padding: 8px 12px;
+
+    background: rgba(255, 255, 255, 0.95);
+
+    border-radius: 4px;
+
+    box-shadow:
+        0 1px 5px rgba(0, 0, 0, 0.25);
+
+    font-size: 14px;
+    line-height: 1.2;
+
+    white-space: nowrap;
+}
+
+
+/*
+    Custom map navigation control.
+
+    The zoom buttons and globe are arranged vertically.
+    The globe is positioned directly below the zoom controls.
+*/
+
+.map-navigation-control {
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-start;
+
+    gap: 6px;
+}
+
+
+/*
+    Move the navigation control to the map area immediately to the
+    right of the 300px earthquake panel.
+
+    This preserves the agreed LEFT-side placement without allowing
+    the controls to overlap the earthquake list.
+*/
+
+.leaflet-top.leaflet-left
+.map-navigation-control {
+    margin-top: 10px;
+    margin-left: 318px;
+}
+
+
+/*
+    Vertical + / - zoom group.
+*/
+
+.map-zoom-buttons {
+    display: flex;
+
+    flex-direction: column;
+
+    overflow: hidden;
+
+    border-radius: 4px;
+
+    box-shadow:
+        0 1px 5px rgba(0, 0, 0, 0.25);
+}
+
+.map-zoom-button {
+    width: 34px;
+    height: 34px;
+
+    padding: 0;
+
+    border: 0;
+
+    border-bottom: 1px solid #ddd;
+
+    background: rgba(255, 255, 255, 0.96);
+
+    color: #222;
+
+    font-size: 22px;
+    line-height: 34px;
+
+    text-align: center;
+
+    cursor: pointer;
+}
+
+.map-zoom-button:last-child {
+    border-bottom: 0;
+}
+
+.map-zoom-button:hover {
+    background: #f1f1f1;
+}
+
+.map-zoom-button:active {
+    background: #e5e5e5;
+}
+
+
+/*
+    Globe wrapper.
+
+    The wrapper provides the positioning context for the vertical
+    continent menu.
+*/
+
+.globe-wrapper {
+    position: relative;
+
+    width: 34px;
+    height: 34px;
+}
+
+
+/*
+    Globe button.
+
+    The globe SVG is supplied by map.js.
+*/
+
+.globe-button {
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    width: 34px;
+    height: 34px;
+
+    padding: 0;
+
+    border: 0;
+
+    border-radius: 4px;
+
+    background: rgba(255, 255, 255, 0.96);
+
+    box-shadow:
+        0 1px 5px rgba(0, 0, 0, 0.25);
+
+    color: #222;
+
+    cursor: pointer;
+}
+
+.globe-button:hover {
+    background: #f1f1f1;
+}
+
+.globe-button:active {
+    background: #e5e5e5;
+}
+
+.globe-button svg {
+    display: block;
+}
+
+
+/*
+    Vertical continent menu.
+
+    The menu is one compact integrated panel.
+    There are no gaps between continent options.
+*/
+
+/*
+    Vertical continent menu.
+
+    The menu is positioned directly to the right of the globe button.
+    There are no gaps between continent options.
+*/
+.continent-menu {
+    position: absolute;
+
+    top: 0;
+    left: 40px;
+
+    display: none;
+
+    flex-direction: column;
+
+    min-width: 150px;
+
+    padding: 0;
+
+    overflow: hidden;
+
+    background: rgba(255, 255, 255, 0.98);
+
+    border-radius: 4px;
+
+    box-shadow:
+        0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.continent-menu.open {
+    display: flex;
+}
+
+
+/*
+    Individual continent menu option.
+
+    Buttons are directly adjacent to each other to preserve the
+    agreed compact vertical menu layout.
+*/
+
+.continent-menu-button {
+    width: 100%;
+
+    padding: 8px 12px;
+
+    border: 0;
+
+    border-bottom: 1px solid #e5e5e5;
+
+    background: transparent;
+
+    color: #222;
+
+    font-size: 13px;
+
+    line-height: 1.2;
+
+    text-align: left;
+
+    cursor: pointer;
+
+    white-space: nowrap;
+}
+
+.continent-menu-button:last-child {
+    border-bottom: 0;
+}
+
+.continent-menu-button:hover {
+    background: #f1f1f1;
+}
+
+
+/*
+    Geographic scale.
+
+    The scale is originally a Leaflet bottom-left control.
+    It is shifted to the right of the earthquake panel so it remains
+    visible on the map.
+*/
+
+.leaflet-control-scale {
+    margin-left: 318px !important;
+
+    margin-bottom: 14px !important;
+}
+
+.leaflet-control-scale-line {
+    border-color: #555;
+
+    background: rgba(255, 255, 255, 0.8);
+
+    color: #222;
+
+    font-size: 11px;
+}
+
+
+/*
+    Horizontal magnitude legend.
+
+    This is the agreed continuous magnitude gradient and uses exactly
+    the same colors as the earthquake marker visual scale.
+*/
+
 .magnitude-legend {
     width: 220px;
+
     padding: 10px 12px;
-    background: white;
+
+    background: rgba(255, 255, 255, 0.96);
+
     border-radius: 4px;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+
+    box-shadow:
+        0 1px 5px rgba(0, 0, 0, 0.25);
+
     font-family: Arial, sans-serif;
+
     font-size: 12px;
 }
 
-/*
-    Keep the legend title visually distinct from the color scale.
-*/
 .magnitude-legend-title {
     margin-bottom: 7px;
-    font-weight: bold;
+
     font-size: 13px;
+
+    font-weight: 700;
 }
 
-/*
-    Display the magnitude color scale as a continuous visual
-    progression from light orange to dark orange.
-*/
 .magnitude-legend-gradient {
     width: 100%;
     height: 14px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    border-radius: 2px;
+
     box-sizing: border-box;
+
+    border: 1px solid rgba(0, 0, 0, 0.2);
+
+    border-radius: 2px;
+
     background: linear-gradient(
         to right,
         #ffd9a8 0%,
@@ -81,64 +603,149 @@ body {
     );
 }
 
-/*
-    Arrange the magnitude labels below the color scale.
-*/
 .magnitude-legend-labels {
     display: flex;
+
     justify-content: space-between;
+
     margin-top: 4px;
+
     font-size: 11px;
 }
 
-/*
-    Define the visual representation of an individual earthquake.
 
-    The marker keeps its magnitude-dependent fill color while using
-    a darker outline to improve contrast against detailed map backgrounds.
-    The subtle dark halo provides an additional separation from the map.
+/*
+    Individual earthquake markers.
 */
+
+.earthquake-marker-wrapper {
+    background: transparent;
+
+    border: 0;
+}
+
 .earthquake-marker {
     box-sizing: border-box;
+
     border-style: solid;
+
     border-radius: 50%;
-    border-color: rgba(0, 0, 0, 0.55);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.20);
-    transition:
-        border-color 100ms ease,
-        border-width 100ms ease,
-        background-color 100ms ease,
-        box-shadow 100ms ease;
+
+    box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.55),
+        0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-/*
-    Define the visual representation of a cluster.
 
-    Cluster colors and dimensions are supplied dynamically by JavaScript
-    according to the strongest earthquake contained in the cluster.
+/*
+    Earthquake clusters.
 */
+
+.earthquake-cluster-wrapper {
+    background: transparent;
+
+    border: 0;
+}
+
 .earthquake-cluster {
     box-sizing: border-box;
+
     display: flex;
+
     align-items: center;
     justify-content: center;
-    border-style: solid;
+
+    border: 2px solid;
+
     border-radius: 50%;
-    font-family: Arial, sans-serif;
-    font-weight: bold;
-    line-height: 1;
-    text-align: center;
-    transition:
-        border-color 100ms ease,
-        border-width 100ms ease,
-        background-color 100ms ease;
+
+    box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.45),
+        0 1px 4px rgba(0, 0, 0, 0.25);
+
+    color: #222;
+
+    font-size: 11px;
+
+    font-weight: 700;
 }
 
+
 /*
-    Make the cluster count readable even when the cluster represents
-    a relatively small magnitude.
+    Earthquake popup.
 */
-.earthquake-cluster-count {
-    pointer-events: none;
-    user-select: none;
+
+.earthquake-popup {
+    min-width: 210px;
+
+    font-size: 13px;
+
+    line-height: 1.45;
+}
+
+.earthquake-popup strong:first-child {
+    font-size: 16px;
+}
+
+
+/*
+    Responsive behavior.
+
+    Below 700px the earthquake panel becomes narrower and the map
+    navigation is returned to the normal left control position because
+    there is no longer enough horizontal space to place it beside
+    the panel.
+*/
+
+@media (max-width: 700px) {
+    #earthquake-panel {
+        width: 270px;
+    }
+
+    .leaflet-top.leaflet-left
+    .map-navigation-control {
+        margin-left: 278px;
+    }
+
+    .leaflet-control-scale {
+        margin-left: 278px !important;
+    }
+
+    #earthquake-count {
+        max-width: 180px;
+
+        overflow: hidden;
+
+        text-overflow: ellipsis;
+    }
+
+    .magnitude-legend {
+        width: 190px;
+    }
+}
+
+@media (max-width: 480px) {
+    #earthquake-panel {
+        width: 250px;
+    }
+
+    .earthquake-panel-header h1 {
+        font-size: 18px;
+    }
+
+    .earthquake-list-item {
+        grid-template-columns:
+            42px
+            minmax(0, 1fr)
+            58px;
+    }
+
+    .leaflet-top.leaflet-left
+    .map-navigation-control {
+        margin-left: 258px;
+    }
+
+    .leaflet-control-scale {
+        margin-left: 258px !important;
+    }
 }

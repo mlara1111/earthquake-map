@@ -1,24 +1,21 @@
-{% load static %}
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    {% load static %}
 
-    <title>Earthquake Map</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!--
-        Use the project favicon served through Django's static-file system.
+        Local SVG favicon for the Earthquake Map application.
     -->
     <link
         rel="icon"
         type="image/svg+xml"
         href="{% static 'map/favicon.svg' %}"
     >
+
+    <title>Earthquake Map</title>
 
     <!--
         Leaflet provides the interactive map component used by the MVP.
@@ -30,18 +27,20 @@
     >
 
     <!--
-        Leaflet.markercluster provides zoom-dependent marker clustering.
-
-        The default cluster appearance is not loaded because the MVP
-        uses a custom cluster icon based on earthquake magnitude.
+        Leaflet.markercluster provides the earthquake clustering behavior.
     -->
     <link
         rel="stylesheet"
         href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
     >
 
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    >
+
     <!--
-        Project-specific map styling.
+        Application-specific map and panel styling.
     -->
     <link
         rel="stylesheet"
@@ -50,14 +49,67 @@
 </head>
 
 <body>
-    <div id="map"></div>
+    <!--
+        Main application container.
 
-    <div id="earthquake-count">
-        Loading earthquakes...
+        The earthquake panel is an overlay on top of the map so that
+        the map remains full-screen.
+    -->
+    <div id="earthquake-app">
+
+        <aside
+            id="earthquake-panel"
+            aria-label="Earthquake list"
+        >
+            <div class="earthquake-panel-header">
+                <h1>USGS Magnitude 2.5+ Earthquakes</h1>
+
+                <p>
+                    Up to 1000 earthquakes in current viewport
+                </p>
+
+                <label for="earthquake-sort">
+                    Sort by
+                </label>
+
+                <select id="earthquake-sort">
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="magnitude-desc">
+                        Highest magnitude
+                    </option>
+                    <option value="magnitude-asc">
+                        Lowest magnitude
+                    </option>
+                </select>
+            </div>
+
+            <div
+                id="earthquake-list"
+                aria-live="polite"
+            >
+                Loading earthquakes...
+            </div>
+        </aside>
+
+        <main id="map"></main>
+
+        <!--
+            The viewport counter is deliberately independent from the
+            earthquake list so that it remains visible while the user
+            interacts with the map.
+        -->
+        <div
+            id="earthquake-count"
+            aria-live="polite"
+        >
+            Loading earthquakes...
+        </div>
+
     </div>
 
     <!--
-        Leaflet provides the JavaScript API used by the map application.
+        Leaflet provides the map API.
     -->
     <script
         src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -65,21 +117,21 @@
     ></script>
 
     <!--
-        Leaflet.markercluster extends Leaflet with clustering support.
+        Leaflet.markercluster provides clustering for earthquake markers.
     -->
     <script
         src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
     ></script>
 
     <!--
-        Earthquake visual configuration must be loaded before map.js.
+        Earthquake marker and cluster visual configuration.
     -->
     <script
         src="{% static 'map/js/earthquake-style.js' %}"
     ></script>
 
     <!--
-        Main map application logic.
+        Main map behavior and application logic.
     -->
     <script
         src="{% static 'map/js/map.js' %}"

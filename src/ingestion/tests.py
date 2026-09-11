@@ -417,6 +417,9 @@ class USGSPaginationTests(TestCase):
                 "updated": 1,
                 "unchanged": 0,
                 "skipped": 1,
+                "requests": 2,
+                "pages": 2,
+                "split_windows": 0,
             },
         )
 

@@ -6,6 +6,7 @@ from earthquakes.models import Earthquake, Source
 from earthquakes.queries import Viewport, get_earthquakes_in_viewport
 from earthquakes.views import EarthquakeListView
 
+
 class EarthquakeViewportQueryTests(TestCase):
     ### Test the viewport query and API behavior.
     CALIFORNIA_VIEWPORT = Viewport(
@@ -81,20 +82,76 @@ class EarthquakeViewportQueryTests(TestCase):
 
         self.assertIn(boundary_earthquake, results)
 
-    def test_limits_results_to_maximum(self):
-        ### Verify that the viewport query never returns more than MAX_RESULTS.
+    def test_excludes_earthquakes_below_minimum_magnitude(self):
+        ### Verify that earthquakes below the MVP minimum magnitude are excluded.
+        below_threshold = self.create_earthquake(
+            source_event_id="below-threshold",
+            latitude=36.0,
+            longitude=-120.0,
+            magnitude=2.49,
+            event_date="2026-01-01T00:00:00Z",
+        )
+
+        results = get_earthquakes_in_viewport(self.CALIFORNIA_VIEWPORT)
+
+        self.assertNotIn(below_threshold, results)
+
+    def test_includes_earthquake_at_minimum_magnitude(self):
+        ### Verify that an earthquake exactly at the MVP minimum magnitude is included.
+        threshold_earthquake = self.create_earthquake(
+            source_event_id="threshold",
+            latitude=36.0,
+            longitude=-120.0,
+            magnitude=2.50,
+            event_date="2026-01-01T00:00:00Z",
+        )
+
+        results = get_earthquakes_in_viewport(self.CALIFORNIA_VIEWPORT)
+
+        self.assertIn(threshold_earthquake, results)
+
+    def test_includes_earthquakes_above_minimum_magnitude(self):
+        ### Verify that earthquakes above the MVP minimum magnitude are included.
+        stronger_earthquake = self.create_earthquake(
+            source_event_id="above-threshold",
+            latitude=36.0,
+            longitude=-120.0,
+            magnitude=4.0,
+            event_date="2026-01-01T00:00:00Z",
+        )
+
+        results = get_earthquakes_in_viewport(self.CALIFORNIA_VIEWPORT)
+
+        self.assertIn(stronger_earthquake, results)
+
+    def test_limits_results_to_maximum_after_magnitude_filter(self):
+        ### Verify that MAX_RESULTS applies after excluding earthquakes below 2.5.
         for index in range(MAX_RESULTS + 10):
             self.create_earthquake(
-                source_event_id=f"limit-{index}",
+                source_event_id=f"limit-qualifying-{index}",
                 latitude=36.0,
                 longitude=-120.0,
                 magnitude=3.0,
                 event_date=f"2026-01-{(index % 28) + 1:02d}T00:00:00Z",
             )
 
+        for index in range(10):
+            self.create_earthquake(
+                source_event_id=f"limit-non-qualifying-{index}",
+                latitude=36.0,
+                longitude=-120.0,
+                magnitude=2.49,
+                event_date=f"2026-02-{index + 1:02d}T00:00:00Z",
+            )
+
         results = get_earthquakes_in_viewport(self.CALIFORNIA_VIEWPORT)
 
         self.assertEqual(results.count(), MAX_RESULTS)
+
+        ### Verify that no below-threshold earthquake is returned.
+        self.assertTrue(
+            all(earthquake.magnitude >= 2.5 for earthquake in results)
+        )
 
     def test_orders_by_magnitude_then_event_date(self):
         ### Verify strongest earthquakes appear first and equal magnitudes
