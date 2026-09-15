@@ -1,9 +1,9 @@
-Earthquake Map — First Pilot Project
+Earthquake Map - First Pilot Project
 =====================================
 
 Project status
 --------------
-First pilot project — substantially complete and in the closing/documentation phase.
+First pilot project - substantially complete and in the closing/documentation phase.
 
 This project is a Django/PostgreSQL/PostGIS application that ingests earthquake
 events from the USGS FDSN Event Web Service, enriches them with administrative
@@ -12,6 +12,43 @@ a viewport-oriented REST API and a Leaflet map frontend.
 
 The project is intentionally documented as a first pilot rather than as a
 production deployment.
+
+System architecture
+-------------------
+The main application flow can be summarized as:
+
+    +--------------------+
+    |       User         |
+    |  Leaflet frontend  |
+    +---------+----------+
+              |
+              | HTTP / REST
+              v
+    +--------------------+
+    |   Django / DRF     |
+    |  Viewport API      |
+    +---------+----------+
+              |
+              | PostGIS query
+              v
+    +--------------------+
+    | PostgreSQL/PostGIS |
+    | Earthquakes +      |
+    | boundary tables    |
+    +--------------------+
+
+Data ingestion and synchronization are separate operational flows:
+
+    +----------------+       +--------------------+
+    | USGS FDSN API  | ----> | USGS ingestion     |
+    +----------------+       | / synchronization  |
+                             +----------+---------+
+                                        |
+                                        v
+                             +--------------------+
+                             | PostgreSQL/PostGIS |
+                             +--------------------+
+
 
 Current capabilities
 --------------------
@@ -112,6 +149,40 @@ Current validation result:
 
     43 tests, all passing.
 
+
+USGS ingestion flow
+-------------------
+A direct ingestion request follows this process:
+
+    USGS FDSN Event Web Service
+                 |
+                 v
+           USGSClient
+                 |
+                 v
+        Request up to 20,000
+                 |
+          +------+------+
+          |             |
+       HTTP 200       HTTP 400
+          |             |
+          v             v
+     Process page   Split time window
+          |             |
+          |        +----+----+
+          |        |         |
+          |     earlier     later
+          |        |         |
+          +--------+---------+
+                   |
+                   v
+             Transform data
+                   |
+                   v
+          Import / update DB
+
+Offset pagination is used when a result set spans multiple pages.
+
 USGS earthquake ingestion
 -------------------------
 The direct ingestion command is:
@@ -135,6 +206,36 @@ The direct-ingestion defaults are defined in:
 
 USGS HTTP 400 result-limit responses trigger recursive time-window splitting.
 Large result sets are continued through offset pagination.
+
+
+Scheduled synchronization flow
+------------------------------
+The normal Windows operational path is:
+
+    Windows Task Scheduler
+             |
+             v
+    sync_earthquakes.ps1
+             |
+             v
+    docker compose exec
+             |
+             v
+    Django sync_earthquakes
+             |
+             v
+        USGS FDSN API
+             |
+             v
+    Create / update / unchanged
+             |
+             v
+      PostgreSQL/PostGIS
+             |
+             v
+    Rotating sync log + exit code
+
+An atomic lock prevents concurrent synchronization runs.
 
 Scheduled synchronization
 -------------------------
@@ -255,6 +356,39 @@ The API result limit is defined in:
 
     src/earthquakes/constants.py
 
+
+Frontend request flow
+---------------------
+Map interaction and API refresh follow this process:
+
+    User moves / zooms map
+              |
+              v
+        Leaflet moveend
+              |
+              v
+       Read map viewport
+              |
+              v
+      GET /api/earthquakes/
+              |
+              v
+     Django + PostGIS filter
+              |
+              v
+       JSON earthquake data
+              |
+        +-----+------+
+        |            |
+        v            v
+     Markers      Earthquake
+     / clusters      list
+        |            |
+        +-----+------+
+              |
+              v
+       Synchronized view
+
 Frontend
 --------
 The frontend is implemented with Leaflet and OpenStreetMap.
@@ -271,10 +405,10 @@ Main behavior:
 - A magnitude legend is displayed near the map scale.
 
 Frontend files:
-- map.html — page structure and template markup.
-- map.css — layout and presentation.
-- earthquake-style.js — magnitude/cartographic visual configuration.
-- map.js — Leaflet behavior, API interaction, list interaction, viewport
+- map.html => page structure and template markup.
+- map.css => layout and presentation.
+- earthquake-style.js => magnitude/cartographic visual configuration.
+- map.js => Leaflet behavior, API interaction, list interaction, viewport
   handling and frontend diagnostics.
 
 Marker clustering
@@ -300,7 +434,7 @@ by default.
 
 Implementation:
 
-    src/map/static/map/map.js
+    src/map/static/map/js/map.js
 
 Normal setting:
 
@@ -340,6 +474,33 @@ Implementation:
     src/config/settings.py
 
 This setting is separate from the frontend DEBUG_MODE flag.
+
+
+Geographic enrichment flow
+--------------------------
+Boundary preparation and earthquake enrichment use the following flow:
+
+    geoBoundaries
+         |
+         +------------------+
+         |                  |
+         v                  v
+      ADM0 data          ADM1 data
+         |                  |
+         v                  v
+    Country table       Region table
+         \                  /
+          \                /
+           +------v-------+
+                  |
+             PostGIS ST_Covers
+                  |
+                  v
+        Earthquake geographic
+             assignment
+
+The stable ADM1 source identity is source_boundary_id.
+Region codes may remain NULL when the source does not provide them consistently.
 
 Boundary data
 -------------
@@ -413,7 +574,7 @@ Key behavior-affecting values and their source files:
   Source: scripts/sync_earthquakes.ps1
 
 - Frontend DEBUG_MODE: false
-  Source: src/map/static/map/map.js
+  Source: src/map/static/map/js/map.js
 
 Testing
 -------
@@ -466,22 +627,110 @@ Operational synchronization:
 
 Clean source archive on Windows
 --------------------------------
-For a Windows-compatible ZIP, use PowerShell Compress-Archive after creating
-a clean staging directory.
+For a Windows-compatible ZIP, use PowerShell with a small, selective staging
+directory. Do not copy the complete repository into staging because local
+data/ may contain several gigabytes of boundary/source data.
 
-The release archive should exclude:
+The source archive should contain the project source and release-level files:
+
+    .gitignore
+    LICENSE
+    README.md
+    compose.yaml
+    Dockerfile
+    requirements.txt
+    scripts/
+    src/
+
+The archive should exclude:
+- data/
+- src/data/
 - .git/
+- .env
+- .env.*
+- __pycache__/
+- *.pyc
+- .pytest_cache/
+- .venv/
+- venv/
+- *.zip
+- *.log
 - .vscode/
 - doc/
-- data/
 - logs/
-- .env
-- Python caches
-- build artifacts
-- generated ZIP files
+- *.egg-info/
 - editor temporary files such as ~$*.docx
 
-Do not use a source archive as a repository commit artifact.
+Create a small temporary staging directory:
+
+```powershell
+$Staging = Join-Path $env:TEMP "earthquake-map-source"
+
+if (Test-Path $Staging) {
+    Remove-Item $Staging -Recurse -Force
+}
+
+New-Item -ItemType Directory -Path $Staging | Out-Null
+```
+
+Copy only the required root files:
+
+```powershell
+$RootFiles = @(
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+    "compose.yaml",
+    "Dockerfile",
+    "requirements.txt"
+)
+
+foreach ($File in $RootFiles) {
+    if (Test-Path $File) {
+        Copy-Item $File -Destination $Staging
+    }
+}
+```
+
+Copy the operational scripts:
+
+```powershell
+robocopy .\scripts "$Staging\scripts" /E `
+    /XD __pycache__ .pytest_cache `
+    /XF *.pyc *.pyo *.pyd *.log *.zip
+```
+
+Copy the application source while explicitly excluding local data and artifacts:
+
+```powershell
+robocopy .\src "$Staging\src" /E `
+    /XD data __pycache__ .pytest_cache `
+    /XF *.pyc *.pyo *.pyd *.log *.zip
+```
+
+Create the ZIP:
+
+```powershell
+$Zip = Join-Path (Get-Location) "earthquake-map-source.zip"
+
+if (Test-Path $Zip) {
+    Remove-Item $Zip -Force
+}
+
+Compress-Archive `
+    -Path "$Staging\*" `
+    -DestinationPath $Zip `
+    -CompressionLevel Optimal
+```
+
+Verify the archive contents before distribution:
+
+```powershell
+tar -tf $Zip
+```
+
+The resulting archive is a distribution artifact and must not be committed to
+the Git repository.
 
 Project license
 ---------------
@@ -520,6 +769,32 @@ Django, Django REST Framework, PostgreSQL/PostGIS and GDAL/OGR
     Third-party software. Their respective licenses apply independently of
     the project GPL v3 license.
 
+Group / Team
+------------
+The Earthquake Map First Pilot was developed through a collaborative
+human–AI development model, with responsibilities divided between project
+leadership and technical implementation.
+
+Project lead / product role - Human:
+- Responsible for project direction, requirements, priorities and scope.
+- Defines acceptance criteria and makes final technical and product decisions.
+- Reviews and validates implementation results.
+- Retains responsibility for the final project outcome.
+
+Architecture, implementation and technical support - AI:
+- Supports system architecture and technical design.
+- Supports implementation, debugging, testing and technical analysis.
+- Supports documentation and identification of implementation risks and
+  potential improvements.
+
+Collaborative development:
+- Design choices, implementation changes, validation, troubleshooting and
+  documentation were developed iteratively through interaction between the
+  project lead and the AI assistant.
+- The AI assistant provides technical proposals and implementation support.
+- The project lead reviews the results, performs validation and retains final
+  decision-making responsibility.
+
 Future development
 ------------------
 The first pilot is substantially complete. Remaining work is mainly related
@@ -551,15 +826,15 @@ Documentation
 -------------
 Primary technical documentation:
 
-    Earthquake Map — First Pilot Project
+    Earthquake Map - First Pilot Project
     Architecture & Technical Documentation
-    Version 12
+    Version 16
     Documentation checkpoint: 15 September 2026
 
 The detailed documentation covers architecture, data model, ingestion,
 synchronization, API, frontend behavior, debugging, automation, validation,
 architectural decisions, licensing and future work.
 
-The documentation also contains process diagrams planned for the final
-documentation pass, because the main ingestion, synchronization and request
-flows are easier to understand visually than through prose alone.
+The documentation includes process diagrams for the main architecture,
+ingestion, synchronization, geographic enrichment and frontend request flows,
+because these processes are easier to understand visually than through prose alone.
