@@ -8,7 +8,7 @@ from earthquakes.models import Earthquake
 class EarthquakeSerializer(serializers.ModelSerializer):
     magnitude = serializers.SerializerMethodField()
 
-    ### Expose only the fields required by the MVP API.
+    ### Expose only the fields required by the API.
     ### This keeps the public API contract explicit instead of exposing
     ### every field currently available in the database model.
     class Meta:

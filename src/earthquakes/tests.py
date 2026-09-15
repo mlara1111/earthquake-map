@@ -83,7 +83,7 @@ class EarthquakeViewportQueryTests(TestCase):
         self.assertIn(boundary_earthquake, results)
 
     def test_excludes_earthquakes_below_minimum_magnitude(self):
-        ### Verify that earthquakes below the MVP minimum magnitude are excluded.
+        ### Verify that earthquakes below the minimum magnitude are excluded.
         below_threshold = self.create_earthquake(
             source_event_id="below-threshold",
             latitude=36.0,
@@ -97,7 +97,7 @@ class EarthquakeViewportQueryTests(TestCase):
         self.assertNotIn(below_threshold, results)
 
     def test_includes_earthquake_at_minimum_magnitude(self):
-        ### Verify that an earthquake exactly at the MVP minimum magnitude is included.
+        ### Verify that an earthquake exactly at the minimum magnitude is included.
         threshold_earthquake = self.create_earthquake(
             source_event_id="threshold",
             latitude=36.0,
@@ -111,7 +111,7 @@ class EarthquakeViewportQueryTests(TestCase):
         self.assertIn(threshold_earthquake, results)
 
     def test_includes_earthquakes_above_minimum_magnitude(self):
-        ### Verify that earthquakes above the MVP minimum magnitude are included.
+        ### Verify that earthquakes above the minimum magnitude are included.
         stronger_earthquake = self.create_earthquake(
             source_event_id="above-threshold",
             latitude=36.0,

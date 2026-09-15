@@ -56,7 +56,7 @@ class EarthquakeListView(generics.ListAPIView):
         if viewport.min_lon >= viewport.max_lon:
             raise ValidationError("min_lon must be smaller than max_lon.")
 
-        ### Execute the reusable viewport query using the fixed MVP result limit.
+        ### Execute the reusable viewport query using the fixed result limit.
         return get_earthquakes_in_viewport(
             viewport=viewport,
             max_results=MAX_RESULTS,

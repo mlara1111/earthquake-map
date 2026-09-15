@@ -30,7 +30,7 @@ class EarthquakeImporter:
 
             return "created"
 
-        ### MVP policy: an event can only be updated during the first three months
+        ### Project policy: an event can only be updated during the first three months
         ### after its event date. This window can be changed in a future version.
         update_deadline = earthquake.event_date + relativedelta(months=3)
 
@@ -41,9 +41,9 @@ class EarthquakeImporter:
         if data["usgs_updated_date"] <= earthquake.usgs_updated_date:
             return "unchanged"
 
-        ### Only these fields are considered relevant for updates in the MVP.
+        ### Only these fields are considered relevant for updates in the project.
         ### Additional USGS fields are stored in the model but are intentionally
-        ### excluded from update comparison until a future MVP iteration.
+        ### excluded from update comparison until a future iteration.
         relevant_fields = [
             "event_date",
             "magnitude",
@@ -65,7 +65,7 @@ class EarthquakeImporter:
         if not changed:
             return "unchanged"
 
-        ### Update only the fields explicitly defined as relevant to the MVP.
+        ### Update only the fields explicitly defined as relevant to the project.
         for field in relevant_fields:
             setattr(earthquake, field, data[field])
 
@@ -74,7 +74,7 @@ class EarthquakeImporter:
         earthquake.save()
 
         ### Recalculate administrative boundaries after the event is updated.
-        ### This is required because geometry is one of the relevant MVP fields.
+        ### This is required because geometry is one of the relevant fields.
         self.spatial_assigner.assign_earthquake(earthquake.id)
 
         return "updated"

@@ -4,7 +4,7 @@ from django.contrib.gis.geos import Point
 class EarthquakeTransformer:
     @staticmethod
     def transform(feature):
-        ### Extract the fields used by the MVP from the USGS GeoJSON feature.
+        ### Extract the fields used by the project from the USGS GeoJSON feature.
         properties = feature["properties"]
         coordinates = feature["geometry"]["coordinates"]
 

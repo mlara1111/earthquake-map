@@ -33,7 +33,7 @@ def get_earthquakes_in_viewport(
 
     ### ST_Intersects is appropriate for point geometries and a map viewport.
     ### It includes points located exactly on the viewport boundary.
-    ### Only earthquakes at or above the MVP minimum magnitude are returned.
+    ### Only earthquakes at or above the minimum magnitude are returned.
     return (
         Earthquake.objects
         .filter(
