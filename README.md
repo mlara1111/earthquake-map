@@ -1,343 +1,565 @@
-# Earthquake Map
+Earthquake Map — First Pilot Project
+=====================================
 
-An interactive web application for exploring earthquake events using geographic and seismic information.
+Project status
+--------------
+First pilot project — substantially complete and in the closing/documentation phase.
 
-## Project Status
+This project is a Django/PostgreSQL/PostGIS application that ingests earthquake
+events from the USGS FDSN Event Web Service, enriches them with administrative
+boundaries from geoBoundaries, and presents the resulting local dataset through
+a viewport-oriented REST API and a Leaflet map frontend.
 
-**Pilot project — first project cycle nearing completion**
+The project is intentionally documented as a first pilot rather than as a
+production deployment.
 
-The first project cycle is now substantially complete. The application provides an end-to-end pipeline for retrieving earthquake data from the USGS, storing and processing it with PostgreSQL/PostGIS, exposing it through a REST API, and visualizing it through an interactive web map.
+Current capabilities
+--------------------
+- USGS earthquake ingestion.
+- Resumable ingestion with pagination and recursive time-window splitting.
+- Three-month update eligibility for recent earthquake records.
+- geoBoundaries ADM0 and ADM1 ingestion.
+- Spatial country and ADM1 enrichment using PostGIS.
+- Local PostgreSQL/PostGIS operational dataset.
+- Viewport-oriented read-only REST API.
+- Leaflet/OpenStreetMap interactive map.
+- Marker clustering with magnitude-dependent visual styling.
+- Earthquake list synchronized with map selection.
+- Daily Windows synchronization through Task Scheduler.
+- Rotating synchronization logs and atomic synchronization locking.
+- Frontend diagnostic logging controlled by DEBUG_MODE.
+- Django debug mode controlled by DJANGO_DEBUG.
+- Automated Django test suite: 43 tests currently passing.
 
-The current focus is on final validation, documentation, repository cleanup, and closing the first pilot project cycle.
-
-## Current Capabilities
-
-- Earthquake data ingestion from the USGS Earthquake API.
-- Incremental synchronization of recently updated earthquake events.
-- PostgreSQL with PostGIS for spatial data storage and querying.
-- Geographic assignment of earthquakes to countries and first-level administrative regions.
-- geoBoundaries ADM0 and ADM1 boundary data support.
-- REST API for retrieving earthquakes within a map viewport.
-- API-side minimum magnitude filtering and result limiting.
-- Interactive Leaflet map.
-- Earthquake markers sized and colored according to magnitude.
-- Marker clustering for dense areas.
-- Interactive earthquake list synchronized with the map.
-- Magnitude-based sorting of earthquake results.
-- Viewport-based loading of earthquake data.
-- Continent navigation controls.
-- Magnitude legend and earthquake information display.
-- Persistent synchronization logs with log rotation.
-- Atomic synchronization locking to prevent overlapping ingestion runs.
-- Windows Task Scheduler integration for daily synchronization.
-- Linux scheduling support through the provided synchronization script.
-
-## Data and Processing
-
-Earthquake events are retrieved from the USGS Earthquake Hazards Program FDSN Event Web Service.
-
-The ingestion pipeline:
-
-1. Requests earthquake events from USGS.
-2. Splits large time windows when the USGS response limit is exceeded.
-3. Handles USGS pagination for large result sets.
-4. Transforms USGS GeoJSON features into the application's internal representation.
-5. Creates new earthquake records or updates recently updated existing records.
-6. Assigns countries and first-level administrative regions using PostGIS spatial operations.
-7. Stores the resulting data in PostgreSQL/PostGIS.
-
-The application currently uses a minimum magnitude of **2.5** for the populated earthquake dataset.
-
-The USGS API retains the original magnitude precision in the database. The application formats magnitudes to one decimal place for presentation.
-
-## Technology Stack
-
+Technology stack
+----------------
 - Python 3.14
 - Django 6.1
 - Django REST Framework
-- GeoDjango
-- PostgreSQL
-- PostGIS
-- Leaflet
-- Leaflet.markercluster
-- Docker
+- PostgreSQL + PostGIS
+- GDAL / OGR
 - Docker Compose
-- PowerShell
-- Windows Task Scheduler
+- Leaflet
+- Leaflet.markercluster 1.5.3
+- OpenStreetMap
+- USGS FDSN Event Web Service
+- geoBoundaries
 
-## Project Structure
+Project structure
+-----------------
+src/
+    Application source code, Django configuration, ingestion, API and frontend.
 
-The main application code is located under `src/`.
+data/
+    Local boundary/source datasets. Excluded from Git.
 
-Key areas include:
+logs/
+    Runtime synchronization logs and lock files. Excluded from Git.
 
-- `src/earthquakes/` — earthquake domain model, API, queries, serializers, views, and shared constants.
-- `src/ingestion/` — USGS ingestion, transformation, boundary processing, and management commands.
-- `src/map/` — interactive map views, templates, CSS, and JavaScript.
-- `scripts/` — synchronization wrappers for scheduled or manual execution.
-- `compose.yaml` — Docker Compose application and database configuration.
+scripts/
+    Platform-specific operational wrappers.
 
-Boundary datasets are intentionally kept outside the Git repository under:
+doc/
+    Project documentation. Excluded from Git.
 
-- `data/boundaries/ADM0/`
-- `data/boundaries/ADM1/`
+compose.yaml
+    Docker Compose development environment.
 
-The `data/` directory is excluded from Git because the boundary datasets are local project assets.
+.env
+    Local environment configuration and secrets. Excluded from Git.
 
-## Running the Application
+Important: .env, local data, runtime logs, editor metadata, Python caches,
+build artifacts and generated archives must not be committed.
 
-Create a local `.env` file containing the required database and application environment variables.
+Running the application
+-----------------------
+Start the services:
 
-Build and start the application with:
+    docker compose up -d
 
-```powershell
-docker compose up --build
-```
+Check service state:
 
-The application will then be available at:
+    docker compose ps
 
-http://localhost:8000/
+Open the application:
 
-## Earthquake Data Ingestion
+    http://localhost:8000/
 
-The initial or manual ingestion can be executed through the Django management command.
+The web service is exposed on port 8000. PostgreSQL is exposed on port 5432
+for the local development environment.
 
-Example:
+The source and data directories are mounted into the web container:
 
-```powershell
-docker compose exec web python manage.py ingest_usgs --start 2026-01-01
-```
+    ./src:/app/src
+    ./data:/app/data
+    ./logs:/app/logs
 
-The ingestion command supports:
+Health checks and validation
+----------------------------
+Run Django's system checks:
 
-- `--start` — start date/time in ISO 8601 format.
-- `--end` — end date/time; defaults to the current UTC time.
-- `--minmagnitude` — minimum earthquake magnitude; defaults to `2.5`.
+    docker compose exec web python manage.py check
 
-For large USGS result sets, the ingestion process automatically splits the requested period and continues through additional result pages when required.
+Confirm that no unexpected migration is required:
 
-## Scheduled Earthquake Synchronization
+    docker compose exec web python manage.py makemigrations --check --dry-run
 
-The project includes a dedicated synchronization command designed for recurring execution.
+Run the complete automated test suite:
 
-The default synchronization period is the **previous 90 days through the current time**. This period aligns with the application's three-month update window for recently occurred events.
+    docker compose exec web python manage.py test
 
-On Windows, the synchronization wrapper is:
+Current validation result:
 
-```powershell
-.\scripts\sync_earthquakes.ps1
-```
+    43 tests, all passing.
 
-Examples:
+USGS earthquake ingestion
+-------------------------
+The direct ingestion command is:
 
-```powershell
-.\scripts\sync_earthquakes.ps1 -LookbackDays 90
-.\scripts\sync_earthquakes.ps1 -LookbackDays 7
-.\scripts\sync_earthquakes.ps1 -StartDate 2026-09-01
-.\scripts\sync_earthquakes.ps1 -StartDate 2026-09-01 -EndDate 2026-09-10
-```
+    docker compose exec web python manage.py ingest_usgs
 
-The minimum magnitude remains `2.5`.
+Its defaults are distinct from the scheduled synchronization command.
 
-The synchronization process:
+Direct-ingestion defaults:
+- Start: 2026-01-01
+- End: current UTC time
+- Minimum magnitude: 2.5
+- USGS request/page size: 20,000
+- Initial offset: 1
+- HTTP timeout: 60 seconds
 
-- prevents concurrent synchronization runs through an atomic lock;
-- records structured execution statistics;
-- writes persistent logs;
-- rotates logs when they reach the configured size;
-- returns a non-zero exit code when synchronization fails.
+The direct-ingestion defaults are defined in:
 
-## Logging and Observability
+    src/ingestion/management/commands/ingest_usgs.py
+    src/ingestion/usgs_client.py
 
-Synchronization logs are stored locally in:
+USGS HTTP 400 result-limit responses trigger recursive time-window splitting.
+Large result sets are continued through offset pagination.
 
-```text
-logs/earthquake-sync.log
-```
+Scheduled synchronization
+-------------------------
+The operational synchronization entry point is:
 
-The log records include information such as:
+    sync_earthquakes
 
-- synchronization period;
-- requests and pages processed;
-- created events;
-- updated events;
-- unchanged events;
-- skipped events;
-- split USGS windows;
-- execution duration;
-- errors and tracebacks when a synchronization fails.
+The Windows wrapper is:
 
-The lock file is:
+    .\scripts\sync_earthquakes.ps1
 
-```text
-logs/earthquake-sync.lock
-```
+Default synchronization:
 
-The lock is removed after a successful or failed run when the process exits normally.
+    .\scripts\sync_earthquakes.ps1 -LookbackDays 90
 
-## Windows Automation
+Other useful examples:
 
-The project is configured for daily synchronization through Windows Task Scheduler.
+    .\scripts\sync_earthquakes.ps1 -LookbackDays 7
 
-The scheduled workflow is:
+    .\scripts\sync_earthquakes.ps1 -StartDate 2026-01-01
 
-```text
-Windows Task Scheduler
-        |
-        v
-scripts/sync_earthquakes.ps1
-        |
-        v
-Docker Compose
-        |
-        v
-Django sync_earthquakes
-        |
-        v
-USGS ingestion pipeline
-        |
-        v
-PostgreSQL / PostGIS
-```
+    .\scripts\sync_earthquakes.ps1 -StartDate 2026-09-01 -EndDate 2026-09-10
 
-The current Windows configuration uses a daily scheduled execution. Docker Desktop is configured to start when the user signs in, and the task is configured to run only when the user is logged on.
+Synchronization defaults:
+- Lookback: 90 days
+- Minimum magnitude: 2.5
+- Progress interval: 500 events
+- Log maximum size: 5 MB
+- Rotated backups: 5
 
-## REST API
+These values are defined primarily in:
 
-The application exposes a REST endpoint for retrieving earthquakes intersecting a geographic viewport.
+    src/ingestion/management/commands/sync_earthquakes.py
 
-The endpoint accepts the viewport boundaries as geographic coordinates and returns earthquake information suitable for rendering on the map.
+The progress interval is defined in:
 
-The API currently:
+    src/ingestion/management/commands/ingest_usgs.py
 
-- validates viewport parameters;
-- applies the minimum magnitude filter;
-- performs a spatial query against the earthquake geometry;
-- orders results by magnitude and event date;
-- limits the response to **1000 earthquakes**;
-- returns earthquake magnitudes formatted to one decimal place.
+The PowerShell wrapper defaults and validation range are defined in:
 
-The API is intentionally viewport-based rather than paginated for the current project scope.
+    scripts/sync_earthquakes.ps1
 
-## Map Interface
+Synchronization logging and locking
+-----------------------------------
+Primary log:
 
-The frontend is built with Leaflet.
+    logs/earthquake-sync.log
 
-The map provides:
+Lock file:
 
-- earthquake markers;
-- magnitude-dependent marker size and color;
-- marker clustering;
-- click-to-select interaction;
-- synchronized map/list selection;
-- viewport-driven data loading;
-- earthquake sorting;
-- continent navigation;
-- zoom controls;
-- magnitude legend;
-- earthquake count for the current viewport.
+    logs/earthquake-sync.lock
 
-Clusters display the number of earthquakes they contain. Cluster size and visual intensity are based on the strongest earthquake represented by the cluster.
+View the latest log entries:
 
-## Boundary Data
+    Get-Content .\logs\earthquake-sync.log -Tail 30
 
-Administrative boundaries are based on geoBoundaries datasets.
+Follow the log while a synchronization is running:
 
-The project uses:
+    Get-Content .\logs\earthquake-sync.log -Wait
 
-- ADM0 for countries.
-- ADM1 for first-level administrative regions.
+Check whether the lock exists:
 
-The boundary datasets are downloaded and imported locally. They are not included in the Git repository.
+    Test-Path .\logs\earthquake-sync.lock
 
-Spatial assignment uses PostGIS `ST_Covers`, allowing earthquake points located on administrative boundary edges to be handled consistently.
+Synchronization statistics include:
+- created
+- updated
+- unchanged
+- skipped
+- requests
+- pages
+- split_windows
+- duration
 
-## Testing
+The synchronization lock is created atomically and prevents concurrent runs.
+Successful completion returns exit code 0; failures return a non-zero exit code.
 
-The project includes automated tests covering the main application components.
+Windows automation
+------------------
+Windows Task Scheduler is configured for:
 
-Run the test suite with:
+- Task: Earthquake Map - USGS Synchronization
+- Frequency: Daily
+- Time: 10:00 local Windows time
+- Start date: 12 September 2026
+- Logon mode: Run only when user is logged on
+- Overlap policy: Do not start a new instance
+- Synchronization window: 90 days
 
-```powershell
-docker compose exec web python manage.py test
-```
+Docker Desktop is configured to start when the user signs in.
 
-The current documented validation checkpoint contains **33 tests**.
+The task was manually launched and completed successfully. Completion was
+confirmed through the persistent synchronization log and absence of the lock
+file.
 
-Additional project validation includes:
-
-- Django migration checks.
-- Database integrity checks.
-- Boundary duplicate checks.
-- Earthquake geometry validation.
-- Ingestion and synchronization runs against the USGS API.
-- Manual validation of the interactive map and API.
-
-## Configuration and Defaults
-
-Important application defaults and limits are centralized where appropriate.
-
-Current key values include:
-
-- Minimum earthquake magnitude: `2.5`
-- API maximum viewport results: `1000`
-- USGS single-request result limit: `20000`
-- Scheduled synchronization lookback: `90 days`
-- Existing-event update window: `3 months`
-- Synchronization log maximum size: `5 MB`
-- Synchronization log backup count: `5`
-
-These values should be reviewed before changing ingestion, API, or scheduling behavior.
-
-## Operational Notes
-
-The daily synchronization does not update administrative boundary datasets. Boundary data is treated as relatively static project reference data and is managed separately from recurring earthquake synchronization.
-
-Earthquakes located offshore may not receive a country or first-level administrative region when their coordinates do not fall within the available administrative polygons. This is expected behavior and does not indicate a failure of the API or ingestion process.
-
-The project deliberately keeps raw/local boundary datasets and environment-specific configuration outside version control.
-
-## Pilot Project Closure
-
-The first project cycle has reached the stage where the main functional pipeline is implemented and validated:
-
-```text
-USGS
-  |
-  v
-Ingestion
-  |
-  v
-Transformation
-  |
-  v
-PostgreSQL / PostGIS
-  |
-  +--> Administrative assignment
-  |
-  v
 REST API
-  |
-  v
-Leaflet Map
-```
+--------
+Endpoint:
 
-The remaining work is primarily project closure and refinement rather than implementation of the core pipeline. This includes final repository review, README and technical documentation maintenance, final validation, and identification of potential improvements for a future project cycle.
+    /api/earthquakes/
 
-## Future Development
+Required viewport parameters:
 
-Potential future work may include:
+    min_lat
+    max_lat
+    min_lon
+    max_lon
 
-- additional earthquake metadata and filtering;
-- richer map interaction;
-- performance optimization for larger datasets;
-- improved API capabilities;
-- expanded automated test coverage;
-- more advanced deployment and operational infrastructure;
-- additional geographic or seismic data sources.
+The API:
+- uses PostGIS spatial filtering;
+- applies a minimum magnitude of 2.5;
+- returns a maximum of 1000 results;
+- orders by magnitude descending and event date descending;
+- is read-only;
+- currently defers pagination.
 
-These items are outside the scope of the current first project cycle.
+The API result limit is defined in:
 
-## License
+    src/earthquakes/constants.py
 
-No project license has been defined yet.
+Frontend
+--------
+The frontend is implemented with Leaflet and OpenStreetMap.
+
+Main behavior:
+- Initial viewport: Europe.
+- Viewport changes refresh the API data.
+- Earthquakes are displayed as individual markers and clusters.
+- The left-side list supports newest, oldest, highest magnitude and lowest
+  magnitude sorting.
+- List and map selection are synchronized.
+- A viewport earthquake count is displayed.
+- A globe control provides continent navigation.
+- A magnitude legend is displayed near the map scale.
+
+Frontend files:
+- map.html — page structure and template markup.
+- map.css — layout and presentation.
+- earthquake-style.js — magnitude/cartographic visual configuration.
+- map.js — Leaflet behavior, API interaction, list interaction, viewport
+  handling and frontend diagnostics.
+
+Marker clustering
+------------------
+Leaflet.markercluster version 1.5.3 is used.
+
+Current clustering configuration:
+- Clustering disabled at zoom 10.
+- Minimum cluster radius: 11 px.
+- Default cluster opacity: 0.75.
+- Active cluster opacity: 0.90.
+- Maximum cluster radius: 60 px.
+- Spiderfy disabled.
+
+Clusters display their earthquake count and derive their visual size and color
+from the strongest earthquake in the cluster. Magnitude text is not displayed
+inside clusters.
+
+Frontend debugging
+------------------
+Frontend diagnostic logging is retained for troubleshooting but is disabled
+by default.
+
+Implementation:
+
+    src/map/static/map/map.js
+
+Normal setting:
+
+    const DEBUG_MODE = false;
+
+To temporarily enable diagnostics:
+
+    const DEBUG_MODE = true;
+
+Reload http://localhost:8000/ and inspect the browser developer console.
+
+The diagnostics cover the main map flow, including viewport calculation,
+API request/response handling, normalization, marker updates, list rendering
+and viewport count updates.
+
+After troubleshooting, restore:
+
+    const DEBUG_MODE = false;
+
+This mode was manually verified with both enabled and disabled states on
+15 September 2026.
+
+Django debug configuration
+--------------------------
+Django debug mode is controlled through the environment variable:
+
+    DJANGO_DEBUG
+
+The local pilot .env currently enables it:
+
+    DJANGO_DEBUG=True
+
+The application settings default to False when DJANGO_DEBUG is not defined.
+
+Implementation:
+
+    src/config/settings.py
+
+This setting is separate from the frontend DEBUG_MODE flag.
+
+Boundary data
+-------------
+Boundary source data is stored locally under:
+
+    data/boundaries/ADM0/
+    data/boundaries/ADM1/
+
+The boundary datasets are excluded from Git.
+
+Current validated boundary state:
+- 230 ADM0 country records.
+- 3,235 ADM1 region records.
+- 198 distinct ADM1 country codes.
+- 0 duplicate ADM0 country codes.
+- 0 duplicate ADM1 source_boundary_id values.
+- Region codes may legitimately be NULL.
+- Spatial assignment uses PostGIS ST_Covers.
+
+The boundary tables are:
+
+    tbl_boundary_country
+    tbl_boundary_region
+
+The project uses source_boundary_id as the stable ADM1 source identity.
+
+Configuration and defaults
+--------------------------
+Key behavior-affecting values and their source files:
+
+- Application minimum magnitude: 2.5
+  Source: src/earthquakes/constants.py
+
+- API maximum results: 1000
+  Source: src/earthquakes/constants.py
+
+- USGS maximum result page: 20,000
+  Source: src/ingestion/usgs_client.py
+
+- USGS request limit: 20,000
+  Source: src/ingestion/usgs_client.py
+
+- USGS initial offset: 1
+  Source: src/ingestion/usgs_client.py
+
+- USGS request timeout: 60 seconds
+  Source: src/ingestion/usgs_client.py
+
+- Direct ingestion start: 2026-01-01
+  Source: src/ingestion/management/commands/ingest_usgs.py
+
+- Direct ingestion end: current UTC time
+  Source: src/ingestion/management/commands/ingest_usgs.py
+
+- Synchronization lookback: 90 days
+  Source: src/ingestion/management/commands/sync_earthquakes.py
+
+- Synchronization progress interval: 500
+  Source: src/ingestion/management/commands/ingest_usgs.py
+
+- Synchronization log maximum size: 5 MB
+  Source: src/ingestion/management/commands/sync_earthquakes.py
+
+- Synchronization log backups: 5
+  Source: src/ingestion/management/commands/sync_earthquakes.py
+
+- PowerShell LookbackDays default: 90
+  Source: scripts/sync_earthquakes.ps1
+
+- PowerShell LookbackDays range: 1–3650
+  Source: scripts/sync_earthquakes.ps1
+
+- Frontend DEBUG_MODE: false
+  Source: src/map/static/map/map.js
+
+Testing
+-------
+The current automated suite contains 43 tests and all tests pass.
+
+Validated areas include:
+- USGS ingestion.
+- Pagination and offset handling.
+- Synchronization period calculation.
+- Explicit date-range handling.
+- Input validation.
+- Synchronization locking.
+- Management-command orchestration.
+- Real synchronization runs.
+- Windows Task Scheduler execution.
+
+The frontend diagnostic mode was also manually verified in both enabled and
+disabled states.
+
+Important commands
+------------------
+Git:
+
+    git status
+    git log --oneline -10
+    git fetch origin
+    git status
+    git add .
+    git commit -m "Descriptive commit message"
+    git push origin main
+
+Docker:
+
+    docker compose up -d
+    docker compose ps
+    docker compose up -d --force-recreate web
+    docker compose down
+    docker compose logs web --tail 30
+    docker compose logs -f web
+
+Django:
+
+    docker compose exec web python manage.py check
+    docker compose exec web python manage.py makemigrations --check --dry-run
+    docker compose exec web python manage.py test
+
+Operational synchronization:
+
+    .\scripts\sync_earthquakes.ps1 -LookbackDays 90
+
+Clean source archive on Windows
+--------------------------------
+For a Windows-compatible ZIP, use PowerShell Compress-Archive after creating
+a clean staging directory.
+
+The release archive should exclude:
+- .git/
+- .vscode/
+- doc/
+- data/
+- logs/
+- .env
+- Python caches
+- build artifacts
+- generated ZIP files
+- editor temporary files such as ~$*.docx
+
+Do not use a source archive as a repository commit artifact.
+
+Project license
+---------------
+Project-authored source code is intended to be released under the GNU General
+Public License version 3 (GPL v3).
+
+The root repository should contain:
+
+    LICENSE
+
+The project GPL v3 license applies to project-authored source code. It does not
+automatically relicense third-party datasets, libraries, map tiles or external
+services.
+
+Third-party data and services
+-----------------------------
+USGS
+    Earthquake event data and FDSN Event Web Service. Use remains subject to
+    applicable USGS data/service terms.
+
+geoBoundaries
+    ADM0 and ADM1 administrative boundary datasets. The applicable license and
+    attribution requirements of the specific source version must be respected.
+
+OpenStreetMap
+    Base map data/tiles. Applicable OpenStreetMap and tile-provider terms
+    remain in force.
+
+Leaflet
+    Third-party mapping library. Its own license applies.
+
+Leaflet.markercluster
+    Third-party clustering library. Its own license applies.
+
+Django, Django REST Framework, PostgreSQL/PostGIS and GDAL/OGR
+    Third-party software. Their respective licenses apply independently of
+    the project GPL v3 license.
+
+Future development
+------------------
+The first pilot is substantially complete. Remaining work is mainly related
+to portability, source-data lifecycle, maintainability and potential future
+scaling.
+
+Deferred or future items:
+- Validate Linux cron scheduling when Linux deployment is introduced.
+- Validate future geoBoundaries refreshes before accepting new source versions.
+- Revisit boundary-table schema ownership if operational requirements change.
+- Revisit API pagination if the query model or result population requires it.
+- Consider production-grade orchestration and monitoring separately from the
+  current local Docker/Windows deployment model.
+- Consider a more formal release/package process if the project moves beyond
+  the first pilot.
+
+Repository hygiene
+-------------------
+The following are intentionally excluded from version control:
+- Local boundary/source data.
+- Runtime synchronization logs.
+- Environment files containing secrets.
+- Documentation working files.
+- Editor metadata.
+- Python caches and build artifacts.
+- Generated source archives.
+
+Documentation
+-------------
+Primary technical documentation:
+
+    Earthquake Map — First Pilot Project
+    Architecture & Technical Documentation
+    Version 12
+    Documentation checkpoint: 15 September 2026
+
+The detailed documentation covers architecture, data model, ingestion,
+synchronization, API, frontend behavior, debugging, automation, validation,
+architectural decisions, licensing and future work.
+
+The documentation also contains process diagrams planned for the final
+documentation pass, because the main ingestion, synchronization and request
+flows are easier to understand visually than through prose alone.

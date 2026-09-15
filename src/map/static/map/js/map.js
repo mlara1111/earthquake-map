@@ -23,9 +23,28 @@ const API_URL = "/api/earthquakes/";
 
 
 /*
+    Frontend diagnostic logging mode.
+
+    Set DEBUG_MODE to true when troubleshooting map behavior during
+    development or pilot validation. Keep it false during normal use.
+*/
+const DEBUG_MODE = false;
+
+
+/*
+    Write diagnostic messages to the browser console only when debug mode is enabled.
+*/
+function debugLog(...args) {
+    if (DEBUG_MODE) {
+        console.log(...args);
+    }
+}
+
+
+/*
     Initial map viewport.
 
-    Europe is used as the default starting area for the MVP.
+    Europe is used as the default starting area for the pilot project.
 */
 
 const INITIAL_MAP_CENTER = [50.0, 10.0];
@@ -134,7 +153,7 @@ let latestRequestId = 0;
 /*
     Initialize the Leaflet map.
 
-    The standard Leaflet zoom control is disabled because the MVP uses
+    The standard Leaflet zoom control is disabled because the pilot project uses
     its own integrated navigation control.
 */
 
@@ -430,13 +449,13 @@ function createMapNavigationControl() {
                                 continentName
                             ];
 
-                        console.log(
-                            "[DEBUG] Continent selected:", // debug log to trace continent selection
+                        debugLog(
+                            "[DEBUG] Continent selected:",
                             continentName
                         );
 
-                        console.log(
-                            "[DEBUG] Target view:", // debug log to trace target view
+                        debugLog(
+                            "[DEBUG] Target view:",
                             view
                         );
 
@@ -452,8 +471,8 @@ function createMapNavigationControl() {
                             }
                         );
 
-                        console.log(
-                            "[DEBUG] setView() called" // debug log to trace setView() calls
+                        debugLog(
+                            "[DEBUG] setView() called"
                         );
                     }
                 );
@@ -659,7 +678,7 @@ const earthquakeMarkers =
             CLUSTER_DISABLE_ZOOM,
 
         /*
-            The MVP uses zoom-to-split rather than spiderfy.
+            The pilot project uses zoom-to-split rather than spiderfy.
         */
 
         spiderfyOnMaxZoom: false,
@@ -1737,7 +1756,7 @@ let latestViewportRequestId = 0;
 
 async function loadEarthquakes() {
 
-    console.log("[DEBUG] loadEarthquakes() called"); // debug log to trace function calls
+    debugLog("[DEBUG] loadEarthquakes() called");
 
     const requestId =
         ++latestViewportRequestId;
@@ -1755,12 +1774,12 @@ async function loadEarthquakes() {
         const bounds =
             map.getBounds();
 
-        console.log("[DEBUG] Current viewport:", {
+        debugLog("[DEBUG] Current viewport:", {
             min_lat: bounds.getSouth(),
             max_lat: bounds.getNorth(),
             min_lon: bounds.getWest(),
             max_lon: bounds.getEast(),
-        }); // debug log to trace viewport bounds
+        });
 
 
         const minLat =
@@ -1826,14 +1845,14 @@ async function loadEarthquakes() {
         const url =
             `${API_URL}?${params.toString()}`;
 
-        console.log("[DEBUG] API URL:", url); // debug log to trace the constructed API URL
+        debugLog("[DEBUG] API URL:", url);
 
-        console.log("[DEBUG] Starting API fetch"); // debug log to trace the start of the API fetch
+        debugLog("[DEBUG] Starting API fetch");
 
         const response = await fetch(url);
 
-        console.log(
-            "[DEBUG] API response received:", // debug log to trace the API response
+        debugLog(
+            "[DEBUG] API response received:",
             response.status,
             response.ok
         );
@@ -1848,9 +1867,9 @@ async function loadEarthquakes() {
 
         const responseData = await response.json();
 
-        console.log("[DEBUG] API JSON received"); // debug log to trace the successful receipt of JSON data
-        console.log(
-            "[DEBUG] API response dataset:", // debug log to trace the dataset received from the API
+        debugLog("[DEBUG] API JSON received");
+        debugLog(
+            "[DEBUG] API response dataset:",
             Array.isArray(responseData)
                 ? responseData.length
                 : responseData.results?.length
@@ -1867,8 +1886,8 @@ async function loadEarthquakes() {
                 ? responseData
                 : responseData.results;
 
-        console.log(
-            "[DEBUG] Earthquakes normalized:", // debug log to trace the normalized earthquake dataset
+        debugLog(
+            "[DEBUG] Earthquakes normalized:",
             earthquakes.length
         );
 
@@ -1933,8 +1952,8 @@ async function loadEarthquakes() {
         currentEarthquakes =
             earthquakes;
 
-        console.log(
-            "[DEBUG] currentEarthquakes updated:", // debug log to trace the update of the in-memory viewport dataset
+        debugLog(
+            "[DEBUG] currentEarthquakes updated:",
             currentEarthquakes.length
         );
 
@@ -2028,8 +2047,8 @@ async function loadEarthquakes() {
             }
         }
 
-        console.log(
-            "[DEBUG] Map markers updated:", // debug log to trace the update of map markers
+        debugLog(
+            "[DEBUG] Map markers updated:",
             markers.length
         );
 
@@ -2040,8 +2059,8 @@ async function loadEarthquakes() {
 
         renderEarthquakeList();
 
-        console.log(
-            "[DEBUG] Earthquake list rendered:", // debug log to trace the rendering of the earthquake list
+        debugLog(
+            "[DEBUG] Earthquake list rendered:",
             currentEarthquakes.length
         );
 
@@ -2052,8 +2071,8 @@ async function loadEarthquakes() {
         earthquakeCount.textContent =
             `${earthquakes.length} earthquakes in current viewport`;
 
-        console.log(
-            "[DEBUG] Earthquake count updated:", // debug log to trace the update of the earthquake count
+        debugLog(
+            "[DEBUG] Earthquake count updated:",
             earthquakeCount.textContent
         );
 
@@ -2126,12 +2145,12 @@ map.on(
     function () {
         const bounds = map.getBounds();
 
-        console.log(
-            "[DEBUG] map moveend fired" // debug log to trace moveend events
+        debugLog(
+            "[DEBUG] map moveend fired"
         );
 
-        console.log(
-            "[DEBUG] Viewport after moveend:", // debug log to trace viewport bounds after moveend
+        debugLog(
+            "[DEBUG] Viewport after moveend:",
             {
                 min_lat: bounds.getSouth(),
                 max_lat: bounds.getNorth(),
