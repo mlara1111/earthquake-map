@@ -141,16 +141,6 @@ const earthquakeMarkerById = new Map();
 
 
 /*
-    Track the latest API request.
-
-    This prevents an older viewport request from overwriting the result
-    of a newer viewport request.
-*/
-
-let latestRequestId = 0;
-
-
-/*
     Initialize the Leaflet map.
 
     The standard Leaflet zoom control is disabled because the pilot project uses
@@ -1320,110 +1310,6 @@ function escapeHtml(value) {
 
 
 /*
-    Build the API URL from the current map viewport.
-*/
-
-function buildEarthquakeApiUrl() {
-    const bounds =
-        map.getBounds();
-
-
-    const minLat =
-        Math.max(
-            -90,
-            bounds.getSouth()
-        );
-
-
-    const maxLat =
-        Math.min(
-            90,
-            bounds.getNorth()
-        );
-
-
-    let minLon =
-        bounds.getWest();
-
-
-    let maxLon =
-        bounds.getEast();
-
-
-    /*
-        If the viewport covers the complete world width, use the
-        complete valid longitude range.
-    */
-
-    if (
-        maxLon - minLon >= 360
-    ) {
-        minLon = -180;
-        maxLon = 180;
-    } else {
-        minLon =
-            Math.max(
-                -180,
-                minLon
-            );
-
-        maxLon =
-            Math.min(
-                180,
-                maxLon
-            );
-    }
-
-
-    const params =
-        new URLSearchParams({
-            min_lat: minLat,
-            max_lat: maxLat,
-            min_lon: minLon,
-            max_lon: maxLon,
-        });
-
-
-    return (
-        `${API_URL}?${params.toString()}`
-    );
-}
-
-
-/*
-    Normalize the API response.
-
-    This supports both a plain array and a DRF response containing
-    a "results" property.
-*/
-
-function normalizeEarthquakeResponse(
-    data
-) {
-    if (
-        Array.isArray(data)
-    ) {
-        return data;
-    }
-
-
-    if (
-        data &&
-        Array.isArray(
-            data.results
-        )
-    ) {
-        return data.results;
-    }
-
-
-    throw new Error(
-        "Unexpected earthquake API response."
-    );
-}
-
-
-/*
     Return earthquakes in the currently selected sort order.
 */
 
@@ -1886,11 +1772,6 @@ async function loadEarthquakes() {
                 ? responseData
                 : responseData.results;
 
-        debugLog(
-            "[DEBUG] Earthquakes normalized:",
-            earthquakes.length
-        );
-
         if (
             !Array.isArray(earthquakes)
         ) {
@@ -1899,6 +1780,10 @@ async function loadEarthquakes() {
             );
         }
 
+        debugLog(
+            "[DEBUG] Earthquakes normalized:",
+            earthquakes.length
+        );
 
         /*
          * A newer viewport request may already have completed while
@@ -2105,6 +1990,10 @@ async function loadEarthquakes() {
 
 
         selectedEarthquakeId =
+            null;
+
+
+        pendingSelectedEarthquakeId =
             null;
 
 
