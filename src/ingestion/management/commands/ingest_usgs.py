@@ -1,3 +1,4 @@
+
 from datetime import datetime, timezone
 import logging
 
@@ -8,12 +9,13 @@ from ingestion.earthquake_importer import EarthquakeImporter
 from ingestion.earthquake_transformer import EarthquakeTransformer
 from ingestion.usgs_client import USGSClient
 
+
 ### Number of events processed between progress messages.
 ### This keeps long-running synchronizations observable without flooding the log.
 PROGRESS_INTERVAL = 500
 
-### Reuse the synchronization logger when this command is called by
-### sync_earthquakes, while remaining harmless for direct ingestion runs.
+
+### Use the shared synchronization logger for ingestion and synchronization logs.
 LOGGER = logging.getLogger("earthquake.sync")
 
 
@@ -57,19 +59,27 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        start = datetime.fromisoformat(options["start"]).replace(tzinfo=timezone.utc)
+        start = datetime.fromisoformat(
+            options["start"],
+        ).replace(tzinfo=timezone.utc)
+
         end = (
-            datetime.fromisoformat(options["end"]).replace(tzinfo=timezone.utc)
+            datetime.fromisoformat(
+                options["end"],
+            ).replace(tzinfo=timezone.utc)
             if options["end"]
             else datetime.now(timezone.utc)
         )
 
         ### Create the API client and database importer once for the ingestion run.
         client = USGSClient()
-        importer = EarthquakeImporter()
 
-        ### Execute the ingestion without returning the statistics dictionary
-        ### to Django, which expects the handle method to return None.
+        ### Send detailed update reports directly to the console and logger.
+        importer = EarthquakeImporter(
+            update_reporter=self._report,
+        )
+
+        ### Execute the ingestion without returning statistics to Django.
         self.import_window(
             client,
             importer,
@@ -86,10 +96,10 @@ class Command(BaseCommand):
         end,
         minmagnitude,
     ):
-        ### Track the complete result of this window, including recursively split windows.
+        ### Track the complete result of this window, including split windows.
         stats = empty_stats()
 
-        ### USGS returns HTTP 400 when the requested window exceeds its result limit.
+        ### USGS returns HTTP 400 when the requested window exceeds its limit.
         ### Split the time window recursively until each query can be processed.
         try:
             data = client.get_events(
@@ -100,9 +110,13 @@ class Command(BaseCommand):
             stats["requests"] += 1
 
         except requests.HTTPError as error:
-            if error.response is not None and error.response.status_code == 400:
-                self.stdout.write(
-                    f"Window exceeds USGS limit: {start} → {end}. Splitting."
+            if (
+                error.response is not None
+                and error.response.status_code == 400
+            ):
+                self._report(
+                    f"Window exceeds USGS limit: {start} → {end}. "
+                    "Splitting."
                 )
 
                 midpoint = start + (end - start) / 2
@@ -132,28 +146,29 @@ class Command(BaseCommand):
 
                 return stats
 
+            ### Propagate unexpected HTTP errors to the caller.
             raise
 
         stats["pages"] += 1
         features = data.get("features", [])
 
-        self.stdout.write(
-            f"Importing {len(features)} events: {start} → {end}"
+        self._report(
+            f"Importing {len(features)} events: {start} → {end}",
         )
 
         page_stats = self.import_features(importer, features)
         add_stats(stats, page_stats)
 
-        self.stdout.write(
+        self._report(
             f"Created: {page_stats['created']} | "
             f"Updated: {page_stats['updated']} | "
             f"Unchanged: {page_stats['unchanged']} | "
-            f"Skipped: {page_stats['skipped']}"
+            f"Skipped: {page_stats['skipped']}",
         )
 
         ### If USGS returned the maximum page size, request the next page.
         if len(features) == client.MAX_RESULTS:
-            ### Include results from all subsequent USGS pages in the final totals.
+            ### Include subsequent USGS pages in the final totals.
             offset_results = self.import_offset(
                 client,
                 importer,
@@ -168,8 +183,8 @@ class Command(BaseCommand):
 
     def import_features(self, importer, features):
         ### Transform and import each USGS event individually.
-        ### Progress is reported periodically so long-running synchronizations
-        ### remain observable without producing one log entry per earthquake.
+        ### Progress is reported periodically to keep long-running
+        ### synchronizations observable.
         stats = empty_stats()
         total_events = len(features)
 
@@ -188,12 +203,10 @@ class Command(BaseCommand):
 
             ### Report progress every 500 events and at the end of each page.
             if index % PROGRESS_INTERVAL == 0 or index == total_events:
-                message = f"Import progress: {index} / {total_events}"
-
-                self.stdout.write(message)
-                self.stdout.flush()
-
-                LOGGER.info(message)
+                self._report(
+                    f"Import progress: {index} / {total_events}",
+                    flush=True,
+                )
 
         return stats
 
@@ -224,8 +237,8 @@ class Command(BaseCommand):
         if not features:
             return stats
 
-        self.stdout.write(
-            f"Importing {len(features)} events from offset {offset}."
+        self._report(
+            f"Importing {len(features)} events from offset {offset}.",
         )
 
         page_stats = self.import_features(importer, features)
@@ -244,3 +257,13 @@ class Command(BaseCommand):
             add_stats(stats, next_page)
 
         return stats
+
+
+    def _report(self, message, flush=False):
+        ### Write operational messages to both the console and logger.
+        self.stdout.write(message)
+
+        if flush:
+            self.stdout.flush()
+
+        LOGGER.info(message)
