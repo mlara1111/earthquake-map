@@ -68,7 +68,9 @@ class Command(BaseCommand):
         client = USGSClient()
         importer = EarthquakeImporter()
 
-        return self.import_window(
+        ### Execute the ingestion without returning the statistics dictionary
+        ### to Django, which expects the handle method to return None.
+        self.import_window(
             client,
             importer,
             start,
