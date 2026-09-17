@@ -1,4 +1,3 @@
-
 import logging
 
 from dateutil.relativedelta import relativedelta
@@ -25,23 +24,35 @@ class EarthquakeImporter:
         "tsunami",
     )
 
-    def __init__(self, source_code="USGS", update_reporter=None):
+    def __init__(
+        self,
+        source_code="USGS",
+        created_reporter=None,
+        update_reporter=None,
+        skipped_reporter=None,
+    ):
         ### Retrieve the source record created by the database seed migration.
         self.source = Source.objects.get(code=source_code)
 
         ### Assign administrative boundaries after creating or updating an event.
         self.spatial_assigner = SpatialAssigner()
 
-        ### Use an optional callback for direct console reporting.
+        ### Use optional callbacks for direct console reporting.
+        self.created_reporter = created_reporter
         self.update_reporter = update_reporter
+        self.skipped_reporter = skipped_reporter
 
     def import_event(self, data):
         ### Do not store or update events marked as deleted by USGS.
         if data["status"] == "deleted":
-            LOGGER.info(
-                "Skipped deleted earthquake: %s",
-                data["source_event_id"],
+            message = (
+                f"Skipped deleted earthquake: "
+                f"{data['source_event_id']}"
             )
+
+            LOGGER.info(message)
+            self._report_skipped(message)
+
             return "skipped"
 
         try:
@@ -49,16 +60,21 @@ class EarthquakeImporter:
                 source=self.source,
                 source_event_id=data["source_event_id"],
             )
+
         except Earthquake.DoesNotExist:
             ### Create and spatially assign a new earthquake.
             earthquake = self._create_earthquake(data)
 
-            LOGGER.info(
-                "Created earthquake: %s",
-                earthquake.source_event_id,
+            message = (
+                f"Created earthquake: "
+                f"{earthquake.source_event_id}"
             )
 
+            LOGGER.info(message)
+            self._report_created(message)
+
             return "created"
+
         except Earthquake.MultipleObjectsReturned:
             ### Log data integrity issues without selecting a record arbitrarily.
             LOGGER.exception(
@@ -71,7 +87,9 @@ class EarthquakeImporter:
 
         ### An event can only be updated during the first three months
         ### after its event date, and only when the source version is newer.
-        update_deadline = earthquake.event_date + relativedelta(months=3)
+        update_deadline = earthquake.event_date + relativedelta(
+            months=3,
+        )
 
         if (
             data["usgs_updated_date"] > update_deadline
@@ -79,16 +97,24 @@ class EarthquakeImporter:
         ):
             return "unchanged"
 
-        changes = self._get_changes(earthquake, data)
+        changes = self._get_changes(
+            earthquake,
+            data,
+        )
 
         ### Do not update or report events without relevant field changes.
         if not changes:
             return "unchanged"
 
-        self._update_earthquake(earthquake, data)
+        self._update_earthquake(
+            earthquake,
+            data,
+        )
 
         ### Recalculate administrative boundaries after the event is updated.
-        self.spatial_assigner.assign_earthquake(earthquake.id)
+        self.spatial_assigner.assign_earthquake(
+            earthquake.id,
+        )
 
         ### Report the changed fields after the update is completed.
         self._report_update(
@@ -105,10 +131,14 @@ class EarthquakeImporter:
             "source": self.source,
         }
 
-        earthquake = Earthquake.objects.create(**earthquake_data)
+        earthquake = Earthquake.objects.create(
+            **earthquake_data,
+        )
 
         ### Assign administrative boundaries using the event geometry.
-        self.spatial_assigner.assign_earthquake(earthquake.id)
+        self.spatial_assigner.assign_earthquake(
+            earthquake.id,
+        )
 
         return earthquake
 
@@ -117,18 +147,28 @@ class EarthquakeImporter:
         changes = {}
 
         for field in self.RELEVANT_FIELDS:
-            old_value = getattr(earthquake, field)
+            old_value = getattr(
+                earthquake,
+                field,
+            )
             new_value = data[field]
 
             if old_value != new_value:
-                changes[field] = (old_value, new_value)
+                changes[field] = (
+                    old_value,
+                    new_value,
+                )
 
         return changes
 
     def _update_earthquake(self, earthquake, data):
         ### Update the relevant fields with the latest source values.
         for field in self.RELEVANT_FIELDS:
-            setattr(earthquake, field, data[field])
+            setattr(
+                earthquake,
+                field,
+                data[field],
+            )
 
         ### Store the timestamp of the latest accepted source version.
         earthquake.usgs_updated_date = data["usgs_updated_date"]
@@ -138,8 +178,24 @@ class EarthquakeImporter:
             update_fields=[
                 *self.RELEVANT_FIELDS,
                 "usgs_updated_date",
-            ]
+            ],
         )
+
+    def _report_created(self, message):
+        ### Send creation reports to the configured callback when available.
+        if self.created_reporter is not None:
+            self.created_reporter(message)
+            return
+
+        LOGGER.info(message)
+
+    def _report_skipped(self, message):
+        ### Send skipped-event reports to the configured callback when available.
+        if self.skipped_reporter is not None:
+            self.skipped_reporter(message)
+            return
+
+        LOGGER.info(message)
 
     def _report_update(self, source_event_id, changes):
         ### Build a readable report for console and file logging.
@@ -152,7 +208,7 @@ class EarthquakeImporter:
             lines.append(
                 f"  {field}: "
                 f"{self._format_value(old_value)} -> "
-                f"{self._format_value(new_value)}"
+                f"{self._format_value(new_value)}",
             )
 
         message = "\n".join(lines)

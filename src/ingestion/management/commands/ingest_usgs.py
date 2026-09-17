@@ -1,4 +1,3 @@
-
 from datetime import datetime, timezone
 import logging
 
@@ -74,18 +73,29 @@ class Command(BaseCommand):
         ### Create the API client and database importer once for the ingestion run.
         client = USGSClient()
 
-        ### Send detailed update reports directly to the console and logger.
+        ### Send detailed event reports directly to the console and logger.
         importer = EarthquakeImporter(
+            created_reporter=self._report,
             update_reporter=self._report,
+            skipped_reporter=self._report,
         )
 
-        ### Execute the ingestion without returning statistics to Django.
-        self.import_window(
+        ### Execute the complete ingestion and collect all statistics,
+        ### including split windows and subsequent offset pages.
+        stats = self.import_window(
             client,
             importer,
             start,
             end,
             options["minmagnitude"],
+        )
+
+        ### Report the aggregate summary only after the entire import finishes.
+        self._report(
+            f"Created: {stats['created']} | "
+            f"Updated: {stats['updated']} | "
+            f"Unchanged: {stats['unchanged']} | "
+            f"Skipped: {stats['skipped']}",
         )
 
     def import_window(
@@ -116,7 +126,7 @@ class Command(BaseCommand):
             ):
                 self._report(
                     f"Window exceeds USGS limit: {start} → {end}. "
-                    "Splitting."
+                    "Splitting.",
                 )
 
                 midpoint = start + (end - start) / 2
@@ -156,15 +166,11 @@ class Command(BaseCommand):
             f"Importing {len(features)} events: {start} → {end}",
         )
 
-        page_stats = self.import_features(importer, features)
-        add_stats(stats, page_stats)
-
-        self._report(
-            f"Created: {page_stats['created']} | "
-            f"Updated: {page_stats['updated']} | "
-            f"Unchanged: {page_stats['unchanged']} | "
-            f"Skipped: {page_stats['skipped']}",
+        page_stats = self.import_features(
+            importer,
+            features,
         )
+        add_stats(stats, page_stats)
 
         ### If USGS returned the maximum page size, request the next page.
         if len(features) == client.MAX_RESULTS:
@@ -185,6 +191,7 @@ class Command(BaseCommand):
         ### Transform and import each USGS event individually.
         ### Progress is reported periodically to keep long-running
         ### synchronizations observable.
+
         stats = empty_stats()
         total_events = len(features)
 
@@ -241,7 +248,10 @@ class Command(BaseCommand):
             f"Importing {len(features)} events from offset {offset}.",
         )
 
-        page_stats = self.import_features(importer, features)
+        page_stats = self.import_features(
+            importer,
+            features,
+        )
         add_stats(stats, page_stats)
 
         ### USGS returned another full page, so continue with the next offset.
@@ -257,7 +267,6 @@ class Command(BaseCommand):
             add_stats(stats, next_page)
 
         return stats
-
 
     def _report(self, message, flush=False):
         ### Write operational messages to both the console and logger.
