@@ -50,6 +50,146 @@ Data ingestion and synchronization are separate operational flows:
                              +--------------------+
 
 
+Technology Architecture
+-----------------------
+
+The pilot is organized into four cooperating technical flows:
+
+1. **Browser presentation**
+   - Leaflet and OpenStreetMap provide the interactive map.
+   - The frontend is implemented in:
+     - `src/map/templates/map/map.html`
+     - `src/map/static/map/js/map.js`
+     - `src/map/static/map/js/earthquake-style.js`
+     - `src/map/static/map/css/map.css`
+
+2. **Read-only API access**
+   - The browser requests earthquake data through:
+     - `/api/earthquakes/`
+   - Django and Django REST Framework validate the request and execute a viewport-oriented PostGIS query.
+   - The API returns JSON data used by the map markers, clusters and synchronized earthquake list.
+
+3. **External-data ingestion and enrichment**
+   - `USGSClient` retrieves earthquake events from the USGS FDSN Event Web Service.
+   - `EarthquakeTransformer` converts USGS features into the application's internal representation.
+   - `EarthquakeImporter` applies create, update and skip persistence logic.
+   - `SpatialAssigner` enriches earthquake records with country and ADM1 information using PostGIS spatial operations.
+   - geoBoundaries data is downloaded and imported through the boundary-management commands.
+
+4. **Scheduled synchronization**
+   - Windows Task Scheduler invokes:
+     - `scripts/sync_earthquakes.ps1`
+   - The wrapper executes the Django synchronization command through Docker Compose.
+   - Synchronization uses an atomic lock, rotating logs and exit codes for operational monitoring.
+
+### Technology architecture graph
+
+```text
+External data sources
+  ├── USGS FDSN Event Web Service
+  │      └── USGSClient
+  │             └── ingest_usgs / sync_earthquakes
+  │                    └── EarthquakeTransformer
+  │                           └── EarthquakeImporter
+  │                                  └── PostgreSQL/PostGIS
+  │
+  └── geoBoundaries ADM0 / ADM1
+         └── GeoBoundariesDownloader
+                └── import_boundaries
+                       └── Boundary tables
+                              └── SpatialAssigner / ST_Covers
+                                     └── Earthquake geographic enrichment
+
+Browser
+  └── Leaflet frontend
+         └── GET /api/earthquakes/
+                └── Django / Django REST Framework
+                       └── PostGIS viewport query
+                              └── JSON response
+                                     ├── Map markers / clusters
+                                     └── Synchronized earthquake list
+
+Windows Task Scheduler
+  └── scripts/sync_earthquakes.ps1
+         └── Docker Compose
+                └── Django synchronization command
+                       └── Rotating log + atomic lock + exit code
+```
+
+The graph describes implemented responsibilities and execution flows. The pilot does not deploy each component as an independent service: Django and PostgreSQL/PostGIS run through Docker Compose, while Windows Task Scheduler invokes the synchronization wrapper outside the application container.
+
+
+Data Model
+----------
+
+The operational data model combines Django-managed earthquake/source records with imported PostgreSQL/PostGIS administrative boundary tables. Boundary tables are used by the enrichment process and are not represented as Django application models in the current pilot.
+
+### Core data relationships
+
+```text
+tbl_source
+  1
+  │
+  └──────────────< tbl_earthquake
+                    │
+                    ├── geometry: Point, SRID 4326
+                    ├── source_event_id
+                    ├── event_date
+                    ├── magnitude
+                    ├── event metadata
+                    ├── country / country_code
+                    └── region / region_code
+```
+
+The earthquake record is associated with a source record. The source identity and event identifier are used to prevent duplicate source events, with uniqueness enforced on:
+
+```text
+(source, source_event_id)
+```
+
+### Spatial enrichment relationships
+
+```text
+tbl_boundary_country (ADM0)
+  └── spatial containment through ST_Covers
+         └── populates earthquake country and country_code
+
+tbl_boundary_region (ADM1)
+  └── spatial containment through ST_Covers
+         └── populates earthquake region and region_code
+```
+
+The `geometry` field stores earthquake locations as geographic points using **SRID 4326**. PostGIS spatial operations associate each earthquake point with the corresponding administrative boundaries.
+
+`ST_Covers` is used for the spatial assignment so that a point located exactly on an administrative boundary is treated as covered. Region codes may remain `NULL` when the source data does not provide them consistently.
+
+### Boundary import flow
+
+```text
+geoBoundaries files
+      └── PostgreSQL staging tables
+             └── Normalized/imported boundary tables
+                    └── SpatialAssigner
+                           └── tbl_earthquake enrichment
+```
+
+The main boundary tables are:
+
+```text
+tbl_boundary_country
+tbl_boundary_region
+```
+
+The stable ADM1 source identity is represented by `source_boundary_id`. Boundary datasets are stored locally under:
+
+```text
+data/boundaries/ADM0/
+data/boundaries/ADM1/
+```
+
+These local datasets are excluded from Git and are treated as operational source-data artifacts.
+
+
 Current capabilities
 --------------------
 - USGS earthquake ingestion.
